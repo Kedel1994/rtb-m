@@ -1,0 +1,1474 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"/>
+<title>RTB-M — Rose-Thamar & Blonde Multi Services</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#f1f5f9;overflow:hidden}
+::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
+input,select,textarea,button{font-family:inherit}
+@media print{#topbar,#sidebar-overlay,#sidebar{display:none!important}.print-show{display:block!important}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+// ╔══════════════════════════════════════════════╗
+// ║  FIREBASE CONFIG — RTB-M                    ║
+// ╚══════════════════════════════════════════════╝
+const FIREBASE_CONFIG = {
+  apiKey:            "AIzaSyALpRSmqa4UHbK3Ycq9tEmxu9cbrn_KGHQ",
+  authDomain:        "rtb-rosetaxibusiness.firebaseapp.com",
+  databaseURL:       "https://rtb-rosetaxibusiness-default-rtdb.firebaseio.com",
+  projectId:         "rtb-rosetaxibusiness",
+  storageBucket:     "rtb-rosetaxibusiness.firebasestorage.app",
+  messagingSenderId: "92324066122",
+  appId:             "1:92324066122:web:c5b87b7622aede1a67c7b3"
+};
+const FB_OK = !FIREBASE_CONFIG.apiKey.includes("VOTRE");
+let db = null;
+if(FB_OK){try{firebase.initializeApp(FIREBASE_CONFIG);db=firebase.database();}catch(e){}}
+</script>
+
+<script type="text/babel">
+const {useState,useEffect,useCallback,useRef,createContext,useContext} = React;
+
+/* ══════════════════════════════
+   STORAGE
+══════════════════════════════ */
+const SK = "rtbm_v1";
+const DEF = {
+  /* ── TAXI ── */
+  motos:[], chauffeurs:[], contrats:[], transactions:[], depenses:[], pertes:[],
+  /* ── COMMERCE ── */
+  produits:[], clients:[], fournisseurs:[], ventes:[], achats:[], stockMovements:[],
+  /* ── SYSTEM ── */
+  modules:[], users:[
+    {id:"u1",nom:"Rose Thamar",username:"rosethamar",password:"RTB@2024!",role:"superadmin",actif:true},
+    {id:"u2",nom:"Agent RTB-M",username:"agent1",password:"Agent@123",role:"agent",actif:true}
+  ], lastSync:null
+};
+
+const loadLocal=()=>{try{const r=localStorage.getItem(SK);return r?{...DEF,...JSON.parse(r)}:{...DEF}}catch{return{...DEF}}};
+const saveLocal=(d)=>{try{localStorage.setItem(SK,JSON.stringify({...d,lastSync:new Date().toISOString()}));return true}catch{return false}};
+const saveFirebase=async(d)=>{if(!db)return false;try{await db.ref("rtbm_data").set(JSON.parse(JSON.stringify({...d,lastSync:new Date().toISOString()})));return true}catch{return false}};
+const listenFirebase=(cb)=>{if(!db)return()=>{};const ref=db.ref("rtbm_data");ref.on("value",s=>{const v=s.val();if(v){saveLocal(v);cb(v);}});return()=>ref.off("value");};
+
+const gid=(p="x")=>`${p}_${Date.now()}_${Math.random().toString(36).slice(2,6)}`;
+const fmt=(n)=>Number(n||0).toLocaleString("fr");
+const tod=()=>new Date().toISOString().split("T")[0];
+const addM=(ds,m)=>{const d=new Date(ds);d.setMonth(d.getMonth()+Number(m));return d.toISOString().split("T")[0]};
+const daysBetween=(a,b)=>Math.floor((new Date(b)-new Date(a))/86400000);
+
+/* ══════════════════════════════
+   DESIGN SYSTEM
+══════════════════════════════ */
+const C={
+  bg:"#f1f5f9", card:"#ffffff", dark:"#0f172a", dark2:"#1e293b",
+  primary:"#6366f1", primaryL:"#eef2ff",
+  taxi:"#f59e0b", taxiL:"#fffbeb",
+  commerce:"#10b981", commerceL:"#ecfdf5",
+  danger:"#ef4444", dangerL:"#fef2f2",
+  text:"#1e293b", textM:"#64748b", textL:"#94a3b8",
+  border:"#e2e8f0"
+};
+
+const S={
+  inp:{width:"100%",padding:"9px 12px",border:`1px solid ${C.border}`,borderRadius:8,fontSize:13,outline:"none",background:"#fff",color:C.text},
+  lbl:{display:"block",fontSize:12,fontWeight:600,color:C.textM,marginBottom:3},
+  fg2:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:11,marginBottom:11},
+  fg1:{marginBottom:11},
+  bp:{background:C.primary,color:"#fff",border:"none",padding:"9px 18px",borderRadius:8,fontWeight:700,fontSize:13,cursor:"pointer"},
+  bs:{background:"#f1f5f9",color:C.text,border:"none",padding:"9px 18px",borderRadius:8,fontWeight:700,fontSize:13,cursor:"pointer"},
+  bd:{background:C.dangerL,color:C.danger,border:`1px solid #fecaca`,padding:"8px 14px",borderRadius:8,fontWeight:700,fontSize:13,cursor:"pointer"},
+  bTaxi:{background:C.taxiL,color:"#92400e",border:`1px solid #fde68a`,padding:"8px 14px",borderRadius:8,fontWeight:700,fontSize:13,cursor:"pointer"},
+  bCommerce:{background:C.commerceL,color:"#065f46",border:`1px solid #a7f3d0`,padding:"8px 14px",borderRadius:8,fontWeight:700,fontSize:13,cursor:"pointer"},
+  modal:{position:"fixed",inset:0,background:"rgba(15,23,42,.65)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:12},
+  mbox:{background:"#fff",borderRadius:14,padding:22,width:"100%",maxWidth:680,maxHeight:"93vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,.3)"},
+  mtitle:{fontSize:17,fontWeight:800,color:C.text,margin:"0 0 16px"},
+  mact:{display:"flex",justifyContent:"flex-end",gap:10,marginTop:16,paddingTop:14,borderTop:`1px solid ${C.border}`},
+  card:{background:"#fff",borderRadius:12,padding:"15px 17px",boxShadow:"0 1px 4px rgba(0,0,0,.06)"},
+  table:{width:"100%",borderCollapse:"collapse",fontSize:13},
+  th:{background:"#f8fafc",padding:"9px 10px",textAlign:"left",fontWeight:700,color:C.textM,fontSize:12,borderBottom:`2px solid ${C.border}`,whiteSpace:"nowrap"},
+  td:{padding:"9px 10px",borderBottom:`1px solid #f1f5f9`,color:C.text,verticalAlign:"middle"},
+  badge:{padding:"2px 9px",borderRadius:10,fontSize:12,fontWeight:700},
+  bie:{background:"#f0f9ff",border:"none",padding:"6px 9px",borderRadius:6,fontSize:13,cursor:"pointer"},
+  bid:{background:C.dangerL,border:"none",padding:"6px 9px",borderRadius:6,fontSize:13,cursor:"pointer"},
+  loginBg:{minHeight:"100vh",background:`linear-gradient(135deg,${C.dark},${C.dark2})`,display:"flex",alignItems:"center",justifyContent:"center"},
+  loginCard:{background:C.dark2,borderRadius:18,padding:34,width:"100%",maxWidth:380,textAlign:"center",border:`1px solid #334155`},
+};
+
+function SBadge({s}){
+  const m={actif:["#dcfce7","#166534"],disponible:["#dcfce7","#166534"],terminé:["#dbeafe","#1d4ed8"],
+    transféré:["#d1fae5","#065f46"],suspendu:["#fef3c7","#92400e"],"en retard":["#fef2f2","#dc2626"],
+    inactif:["#f1f5f9","#6b7280"],attribuée:["#fef3c7","#92400e"],"en maintenance":["#fef2f2","#dc2626"],
+    Payé:["#dcfce7","#166534"],Partiel:["#fef3c7","#92400e"],Impayé:["#fef2f2","#dc2626"],
+    Livré:["#dcfce7","#166534"],"En transit":["#fef3c7","#92400e"],Commandé:["#dbeafe","#1d4ed8"],
+    Ouvert:["#fef2f2","#dc2626"],"En cours":["#fef3c7","#92400e"],Résolu:["#dcfce7","#166534"]};
+  const[bg,c]=m[s]||["#f1f5f9","#6b7280"];
+  return <span style={{...S.badge,background:bg,color:c}}>{s}</span>;
+}
+
+function Sp({h=8}){return <div style={{height:h}}/>}
+
+/* ══════════════════════════════
+   NAV STRUCTURE
+══════════════════════════════ */
+const NAV=[
+  {id:"dashboard",icon:"📊",label:"Tableau de Bord",module:"core"},
+  // TAXI
+  {id:"motos",icon:"🏍️",label:"Motos",module:"taxi"},
+  {id:"chauffeurs",icon:"👤",label:"Chauffeurs",module:"taxi"},
+  {id:"contrats",icon:"📋",label:"Contrats",module:"taxi"},
+  {id:"transactions",icon:"💳",label:"Paiements",module:"taxi"},
+  {id:"depenses",icon:"💸",label:"Dépenses Taxi",module:"taxi"},
+  {id:"pertes",icon:"⚠️",label:"Pertes",module:"taxi"},
+  {id:"transferts",icon:"🔄",label:"Transferts",module:"taxi"},
+  // COMMERCE
+  {id:"produits",icon:"📦",label:"Produits",module:"commerce"},
+  {id:"ventes",icon:"🧾",label:"Ventes",module:"commerce"},
+  {id:"achats",icon:"🛒",label:"Achats Fournisseurs",module:"commerce"},
+  {id:"clients",icon:"👥",label:"Clients",module:"commerce"},
+  {id:"fournisseurs",icon:"🏭",label:"Fournisseurs",module:"commerce"},
+  {id:"stock",icon:"📊",label:"Suivi Stock",module:"commerce"},
+  // SYSTEM
+  {id:"caisse",icon:"🏦",label:"Caisse & Flux",module:"core"},
+  {id:"rapports",icon:"📈",label:"Rapports",module:"core"},
+  {id:"utilisateurs",icon:"🔐",label:"Utilisateurs",module:"core",admin:true},
+  {id:"extensions",icon:"🧩",label:"Extensions",module:"core",admin:true},
+];
+
+const MODULE_COLORS={taxi:C.taxi,commerce:C.commerce,core:C.primary};
+const MODULE_LABELS={taxi:"🏍️ Taxi",commerce:"🛒 Commerce",core:"⚙️ Système"};
+
+/* ══════════════════════════════
+   APP
+══════════════════════════════ */
+function App(){
+  const[data,setData]=useState(loadLocal);
+  const[session,setSession]=useState(null);
+  const[page,setPage]=useState("dashboard");
+  const[saveStatus,setSaveStatus]=useState("✓ Local");
+  const[syncStatus,setSyncStatus]=useState(FB_OK?"🔄 Connexion...":"⚠️ Mode Local");
+  const[alert,setAlert]=useState(null);
+  const[menuOpen,setMenuOpen]=useState(false);
+  const[showParams,setShowParams]=useState(false);
+  const[fbReady,setFbReady]=useState(false);
+  const saveTimer=useRef(null);
+  const isRemote=useRef(false);
+
+  useEffect(()=>{
+    if(!FB_OK){setSyncStatus("⚠️ Mode Local");return;}
+    const unsub=listenFirebase(d=>{setFbReady(true);setSyncStatus("🟢 "+new Date().toLocaleTimeString("fr"));isRemote.current=true;setData(d);});
+    return unsub;
+  },[]);
+
+  useEffect(()=>{
+    if(!session)return;
+    if(isRemote.current){isRemote.current=false;return;}
+    setSaveStatus("💾...");
+    clearTimeout(saveTimer.current);
+    saveTimer.current=setTimeout(async()=>{
+      saveLocal(data);
+      if(FB_OK&&fbReady){const ok=await saveFirebase(data);setSaveStatus(ok?"✓ Cloud":"✓ Local");if(ok)setSyncStatus("🟢 "+new Date().toLocaleTimeString("fr"));}
+      else setSaveStatus("✓ Local");
+    },800);
+  },[data,session,fbReady]);
+
+  const showAlert=(msg,type="info")=>{setAlert({msg,type});setTimeout(()=>setAlert(null),4500);};
+  const mutate=useCallback(fn=>setData(prev=>fn({...prev})),[]);
+  const navTo=(p)=>{setPage(p);setMenuOpen(false);};
+
+  if(!session)return <Login users={data.users} onLogin={u=>setSession(u)} fbOk={FB_OK}/>;
+
+  const alertColors={info:"#3b82f6",success:"#22c55e",error:"#ef4444",warning:"#f59e0b"};
+  const navItem=NAV.find(n=>n.id===page);
+  const pageColor=MODULE_COLORS[navItem?.module||"core"];
+  const pageLabel=navItem?.label||"";
+
+  const allNav=[...NAV,...(data.modules||[]).map(m=>({id:"ext_"+m.id,icon:m.icon||"🧩",label:m.nom,module:"ext"}))];
+
+  return(
+    <div style={{display:"flex",flexDirection:"column",height:"100vh",overflow:"hidden",background:C.bg}}>
+
+      {/* TOPBAR */}
+      <div id="topbar" style={{display:"flex",alignItems:"center",background:C.dark,padding:"0 12px",height:50,flexShrink:0,gap:10,zIndex:600}}>
+        <button onClick={()=>setMenuOpen(o=>!o)} style={{background:"transparent",border:"none",color:"#fff",fontSize:22,padding:"4px 6px",borderRadius:6,cursor:"pointer",lineHeight:1}}>
+          {menuOpen?"✕":"☰"}
+        </button>
+        <div style={{flex:1,display:"flex",alignItems:"center",gap:8,minWidth:0}}>
+          <span style={{fontWeight:900,color:"#f8fafc",fontSize:14,letterSpacing:.5,whiteSpace:"nowrap"}}>RTB-M</span>
+          <span style={{color:"#475569",fontSize:12}}>|</span>
+          <span style={{color:pageColor,fontSize:13,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{pageLabel}</span>
+        </div>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
+          <span style={{fontSize:10,color:saveStatus.includes("✓")?"#22c55e":"#f59e0b",whiteSpace:"nowrap"}}>{saveStatus}</span>
+          <button onClick={()=>setShowParams(true)} style={{background:C.dark2,border:"none",color:"#94a3b8",fontSize:17,padding:"5px 8px",borderRadius:7,cursor:"pointer"}}>⚙️</button>
+        </div>
+      </div>
+
+      {/* SYNC BAR */}
+      <div style={{background:FB_OK&&fbReady?"#052e16":"#1c1917",padding:"2px 14px",fontSize:10,color:FB_OK&&fbReady?"#86efac":"#fbbf24",flexShrink:0}}>
+        {syncStatus}
+      </div>
+
+      {/* SIDEBAR */}
+      {menuOpen&&<div id="sidebar-overlay" style={{position:"fixed",inset:0,zIndex:490,background:"rgba(0,0,0,.5)"}} onClick={()=>setMenuOpen(false)}/>}
+      <div id="sidebar" style={{position:"fixed",top:0,left:0,height:"100vh",width:240,background:C.dark,zIndex:500,transform:menuOpen?"translateX(0)":"translateX(-100%)",transition:"transform .25s ease",display:"flex",flexDirection:"column",overflowY:"auto"}}>
+        {/* Logo */}
+        <div style={{padding:"16px 14px",borderBottom:`1px solid ${C.dark2}`}}>
+          <div style={{fontWeight:900,color:"#f8fafc",fontSize:16}}>RTB-M</div>
+          <div style={{fontSize:11,color:"#64748b"}}>Rose-Thamar & Blonde Multi Services</div>
+          <div style={{marginTop:8,fontSize:11,color:FB_OK&&fbReady?"#86efac":"#f59e0b"}}>{syncStatus}</div>
+        </div>
+        {/* User */}
+        <div style={{padding:"10px 14px",borderBottom:`1px solid ${C.dark2}`}}>
+          <div style={{color:"#94a3b8",fontSize:12,fontWeight:600}}>{session.nom}</div>
+          <div style={{color:C.taxi,fontSize:11}}>{session.role==="superadmin"?"Super Admin":"Agent"}</div>
+        </div>
+        {/* Nav groups */}
+        <div style={{flex:1,overflowY:"auto",paddingBottom:12}}>
+          {/* Core */}
+          <div style={{padding:"8px 14px 4px",fontSize:10,color:"#475569",fontWeight:700,letterSpacing:1}}>GÉNÉRAL</div>
+          {allNav.filter(n=>n.module==="core"&&(!n.admin||session.role==="superadmin")).map(n=>(
+            <NavBtn key={n.id} n={n} active={page===n.id} color={C.primary} onClick={()=>navTo(n.id)}/>
+          ))}
+          {/* Taxi */}
+          <div style={{padding:"8px 14px 4px",marginTop:4,fontSize:10,color:C.taxi,fontWeight:700,letterSpacing:1}}>🏍️ MODULE TAXI</div>
+          {allNav.filter(n=>n.module==="taxi").map(n=>(
+            <NavBtn key={n.id} n={n} active={page===n.id} color={C.taxi} onClick={()=>navTo(n.id)}/>
+          ))}
+          {/* Commerce */}
+          <div style={{padding:"8px 14px 4px",marginTop:4,fontSize:10,color:C.commerce,fontWeight:700,letterSpacing:1}}>🛒 MODULE COMMERCE</div>
+          {allNav.filter(n=>n.module==="commerce").map(n=>(
+            <NavBtn key={n.id} n={n} active={page===n.id} color={C.commerce} onClick={()=>navTo(n.id)}/>
+          ))}
+          {/* Extensions */}
+          {(data.modules||[]).length>0&&(
+            <>
+              <div style={{padding:"8px 14px 4px",marginTop:4,fontSize:10,color:"#a78bfa",fontWeight:700,letterSpacing:1}}>🧩 EXTENSIONS</div>
+              {allNav.filter(n=>n.module==="ext").map(n=>(
+                <NavBtn key={n.id} n={n} active={page===n.id} color="#a78bfa" onClick={()=>navTo(n.id)}/>
+              ))}
+            </>
+          )}
+        </div>
+        {/* Bottom */}
+        <div style={{padding:"12px 14px",borderTop:`1px solid ${C.dark2}`,display:"flex",flexDirection:"column",gap:8}}>
+          <button style={{background:C.dark2,border:"none",color:"#94a3b8",padding:"9px 12px",borderRadius:8,textAlign:"left",fontSize:13,cursor:"pointer"}} onClick={()=>{setShowParams(true);setMenuOpen(false);}}>⚙️ Paramètres</button>
+          <button style={{...S.bd,width:"100%",fontSize:12}} onClick={()=>{setSession(null);setPage("dashboard");setMenuOpen(false);}}>🚪 Déconnexion</button>
+        </div>
+      </div>
+
+      {/* ALERT */}
+      {alert&&<div style={{background:alertColors[alert.type],color:"#fff",padding:"8px 16px",fontSize:13,fontWeight:600,flexShrink:0}}>{alert.msg}</div>}
+
+      {/* CONTENT */}
+      <div style={{flex:1,overflowY:"auto",padding:"14px"}}>
+        {page==="dashboard"    && <Dashboard data={data} setPage={navTo} session={session}/>}
+        {/* TAXI */}
+        {page==="motos"        && <GMotos data={data} mutate={mutate} showAlert={showAlert} session={session}/>}
+        {page==="chauffeurs"   && <GChauffeurs data={data} mutate={mutate} showAlert={showAlert} session={session}/>}
+        {page==="contrats"     && <GContrats data={data} mutate={mutate} showAlert={showAlert}/>}
+        {page==="transactions" && <GTransactions data={data} mutate={mutate} showAlert={showAlert} session={session}/>}
+        {page==="depenses"     && <GDepenses data={data} mutate={mutate} showAlert={showAlert} session={session}/>}
+        {page==="pertes"       && <GPertes data={data} mutate={mutate} showAlert={showAlert} session={session}/>}
+        {page==="transferts"   && <GTransferts data={data} mutate={mutate} showAlert={showAlert}/>}
+        {/* COMMERCE */}
+        {page==="produits"     && <GProduits data={data} mutate={mutate} showAlert={showAlert} session={session}/>}
+        {page==="ventes"       && <GVentes data={data} mutate={mutate} showAlert={showAlert} session={session}/>}
+        {page==="achats"       && <GAchats data={data} mutate={mutate} showAlert={showAlert} session={session}/>}
+        {page==="clients"      && <GClients data={data} mutate={mutate} showAlert={showAlert} session={session}/>}
+        {page==="fournisseurs" && <GFournisseurs data={data} mutate={mutate} showAlert={showAlert} session={session}/>}
+        {page==="stock"        && <GStock data={data}/>}
+        {/* CORE */}
+        {page==="caisse"       && <Caisse data={data}/>}
+        {page==="rapports"     && <Rapports data={data}/>}
+        {page==="utilisateurs" && session.role==="superadmin" && <GUsers data={data} mutate={mutate} showAlert={showAlert}/>}
+        {page==="extensions"   && session.role==="superadmin" && <GExtensions data={data} mutate={mutate} showAlert={showAlert}/>}
+        {/* EXTENSIONS DYNAMIQUES */}
+        {(data.modules||[]).map(m=>page==="ext_"+m.id&&<ExtensionView key={m.id} module={m}/>)}
+      </div>
+
+      {showParams&&<Parametres session={session} data={data} mutate={mutate} showAlert={showAlert} onClose={()=>setShowParams(false)} setSession={setSession}/>}
+    </div>
+  );
+}
+
+function NavBtn({n,active,color,onClick}){
+  return(
+    <button onClick={onClick} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"10px 16px",background:active?`${color}22`:"transparent",border:"none",color:active?"#f8fafc":"#94a3b8",fontSize:13,cursor:"pointer",textAlign:"left",borderLeft:active?`3px solid ${color}`:"3px solid transparent"}}>
+      <span style={{fontSize:15}}>{n.icon}</span><span>{n.label}</span>
+    </button>
+  );
+}
+
+/* ══════════════════════════════ LOGIN ══════════════════════════════ */
+function Login({users,onLogin,fbOk}){
+  const[u,setU]=useState("");const[p,setP]=useState("");const[err,setErr]=useState("");
+  const go=()=>{const usr=users.find(x=>x.username===u&&x.password===p&&x.actif);if(usr)onLogin(usr);else setErr("Identifiants incorrects.");};
+  return(
+    <div style={S.loginBg}>
+      <div style={S.loginCard}>
+        <div style={{fontSize:52,marginBottom:6}}>🏍️🛒</div>
+        <h1 style={{color:"#f8fafc",fontSize:18,fontWeight:900,letterSpacing:1,margin:"0 0 2px"}}>ROSE-THAMAR & BLONDE</h1>
+        <div style={{color:"#f8fafc",fontSize:14,fontWeight:700,marginBottom:4}}>MULTI SERVICES</div>
+        <p style={{color:C.primary,fontSize:11,fontStyle:"italic",marginBottom:10}}>RTB-M : Mobilité, Commerce & Progrès</p>
+        <div style={{background:"#0f172a",borderRadius:8,padding:"5px 12px",marginBottom:18,fontSize:11,color:fbOk?"#86efac":"#f59e0b"}}>
+          {fbOk?"🟢 Firebase activé":"⚠️ Mode Local"}
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <input style={{...S.inp,background:"#0f172a",color:"#f8fafc",border:"1px solid #334155"}} placeholder="Nom d'utilisateur" value={u} onChange={e=>setU(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()}/>
+          <input style={{...S.inp,background:"#0f172a",color:"#f8fafc",border:"1px solid #334155"}} type="password" placeholder="Mot de passe" value={p} onChange={e=>setP(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()}/>
+          {err&&<p style={{color:"#ff6b6b",fontSize:12}}>{err}</p>}
+          <button style={S.bp} onClick={go}>🔐 Se Connecter</button>
+        </div>
+        <p style={{color:"#475569",fontSize:11,marginTop:18}}>© 2024 RTB-M — Rose-Thamar & Blonde Multi Services</p>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════ DASHBOARD ══════════════════════════════ */
+function Dashboard({data,setPage,session}){
+  const today=tod();
+  // TAXI
+  const contratsA=data.contrats.filter(c=>c.statut==="actif");
+  const txToday=data.transactions.filter(t=>t.date===today);
+  const totalTxToday=txToday.reduce((s,t)=>s+Number(t.montantPaye||0),0);
+  const totalEnc=data.transactions.reduce((s,t)=>s+Number(t.montantPaye||0),0);
+  // COMMERCE
+  const totalVentes=data.ventes.reduce((s,v)=>s+Number(v.total||0),0);
+  const ventesToday=data.ventes.filter(v=>v.date===today).reduce((s,v)=>s+Number(v.total||0),0);
+  const totalAchats=data.achats.reduce((s,a)=>s+Number(a.totalGeneral||0),0);
+  const profitCommerce=data.ventes.reduce((s,v)=>s+Number(v.profitNet||0),0);
+  // ALERTES
+  const stockAlerts=data.produits.filter(p=>Number(p.stockUnites||0)<=Number(p.minStockAlert||0));
+  const alertEch=data.contrats.filter(c=>{if(c.statut!=="actif")return false;const j=daysBetween(today,c.dateFin);return j>=0&&j<=30;});
+  const clientsDus=data.clients.filter(c=>Number(c.balanceDue||0)>0);
+
+  const cards=[
+    {g:"taxi",l:"Motos",v:data.motos.length,ic:"🏍️",sub:`${contratsA.length} contrats actifs`,page:"motos"},
+    {g:"taxi",l:"Encaissé Aujourd'hui",v:`${fmt(totalTxToday)} HTG`,ic:"💳",sub:`${txToday.length} paiements`,page:"transactions"},
+    {g:"taxi",l:"Total Taxi Encaissé",v:`${fmt(totalEnc)} HTG`,ic:"💰",sub:`${data.chauffeurs.length} chauffeurs`,page:"caisse"},
+    {g:"commerce",l:"Produits en Stock",v:data.produits.length,ic:"📦",sub:`${stockAlerts.length} alertes stock`,page:"produits"},
+    {g:"commerce",l:"Ventes Aujourd'hui",v:`${fmt(ventesToday)} HTG`,ic:"🧾",sub:`${data.ventes.filter(v=>v.date===today).length} factures`,page:"ventes"},
+    {g:"commerce",l:"Profit Commerce",v:`${fmt(profitCommerce)} HTG`,ic:"📈",sub:`Total ${fmt(totalVentes)} HTG en ventes`,page:"rapports"},
+    {g:"commerce",l:"Total Achats",v:`${fmt(totalAchats)} HTG`,ic:"🛒",sub:`${data.achats.length} commandes`,page:"achats"},
+    {g:"core",l:"Clients",v:data.clients.length,ic:"👥",sub:`${clientsDus.length} avec balance due`,page:"clients"},
+  ];
+
+  return(
+    <div>
+      <div style={{marginBottom:14}}>
+        <h2 style={{fontSize:18,fontWeight:800,color:C.text,margin:"0 0 2px"}}>📊 Tableau de Bord</h2>
+        <div style={{fontSize:12,color:C.textM}}>📅 {new Date().toLocaleDateString("fr",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}</div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",gap:12,marginBottom:14}}>
+        {cards.map((c,i)=>{
+          const col=c.g==="taxi"?C.taxi:c.g==="commerce"?C.commerce:C.primary;
+          return(
+            <div key={i} onClick={()=>setPage(c.page)} style={{...S.card,borderLeft:`4px solid ${col}`,cursor:"pointer"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                <div>
+                  <div style={{fontSize:11,color:C.textM,fontWeight:600}}>{c.l}</div>
+                  <div style={{fontSize:18,fontWeight:800,color:C.text,margin:"3px 0"}}>{c.v}</div>
+                  <div style={{fontSize:10,color:C.textL}}>{c.sub}</div>
+                </div>
+                <span style={{fontSize:24}}>{c.ic}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Alertes */}
+      {(alertEch.length>0||stockAlerts.length>0||clientsDus.length>0)&&(
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:12,marginBottom:14}}>
+          {alertEch.length>0&&(
+            <div style={{...S.card,borderLeft:`4px solid ${C.taxi}`}}>
+              <div style={{fontWeight:700,color:C.taxi,fontSize:13,marginBottom:8}}>⏰ Contrats Proches Échéance</div>
+              {alertEch.slice(0,4).map(c=>{const ch=data.chauffeurs.find(x=>x.id===c.chauffeurId);return(
+                <div key={c.id} style={{fontSize:12,color:C.textM,padding:"4px 0",borderBottom:`1px solid #f1f5f9`}}>
+                  👤 {ch?.nom} {ch?.prenom} — <b>{daysBetween(today,c.dateFin)}j</b>
+                </div>
+              );})}
+            </div>
+          )}
+          {stockAlerts.length>0&&(
+            <div style={{...S.card,borderLeft:`4px solid ${C.commerce}`}}>
+              <div style={{fontWeight:700,color:C.commerce,fontSize:13,marginBottom:8}}>📦 Stock Faible ({stockAlerts.length})</div>
+              {stockAlerts.slice(0,4).map(p=>(
+                <div key={p.id} style={{fontSize:12,color:C.textM,padding:"4px 0",borderBottom:`1px solid #f1f5f9`}}>
+                  📦 {p.nom} — <b style={{color:C.danger}}>{p.stockUnites||0} unités</b>
+                </div>
+              ))}
+            </div>
+          )}
+          {clientsDus.length>0&&(
+            <div style={{...S.card,borderLeft:`4px solid ${C.danger}`}}>
+              <div style={{fontWeight:700,color:C.danger,fontSize:13,marginBottom:8}}>💰 Clients avec Balance Due</div>
+              {clientsDus.slice(0,4).map(c=>(
+                <div key={c.id} style={{fontSize:12,color:C.textM,padding:"4px 0",borderBottom:`1px solid #f1f5f9`}}>
+                  👥 {c.nom} — <b style={{color:C.danger}}>{fmt(c.balanceDue)} HTG</b>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Dernières ventes */}
+      <div style={S.card}>
+        <div style={{fontWeight:700,color:C.text,fontSize:14,marginBottom:10}}>🧾 Dernières Ventes</div>
+        <div style={{overflowX:"auto"}}>
+          <table style={S.table}>
+            <thead><tr><th style={S.th}>Date</th><th style={S.th}>Client</th><th style={S.th}>Total</th><th style={S.th}>Profit</th><th style={S.th}>Statut</th></tr></thead>
+            <tbody>
+              {data.ventes.slice(-6).reverse().map(v=>(
+                <tr key={v.id}>
+                  <td style={S.td}>{v.date}</td>
+                  <td style={S.td}>{v.clientNom||"—"}</td>
+                  <td style={{...S.td,fontWeight:700,color:C.commerce}}>{fmt(v.total)} HTG</td>
+                  <td style={{...S.td,color:"#10b981"}}>{fmt(v.profitNet)} HTG</td>
+                  <td style={S.td}><SBadge s={v.statutPaiement||"Payé"}/></td>
+                </tr>
+              ))}
+              {!data.ventes.length&&<tr><td colSpan={5} style={{...S.td,textAlign:"center",color:C.textL}}>Aucune vente enregistrée</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════ MOTOS ══════════════════════════════ */
+function GMotos({data,mutate,showAlert,session}){
+  const[showF,setShowF]=useState(false);const[editing,setEditing]=useState(null);const[search,setSearch]=useState("");
+  const em=()=>({code:"",type:"2 roues",marque:"",modele:"",annee:"",couleur:"",etat:"neuve",numeroMoteur:"",numeroChassis:"",numeroImmat:"",prixAchat:"",dateAchat:"",fraisTransport:"",fraisDedouanement:"",fraisLegalisation:"",fraisImmatriculation:"",autresFrais:"",numeroAssurance:"",dateExpAssurance:"",kilometrage:"",statut:"disponible",description:""});
+  const[form,setForm]=useState(em());const F=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const coutT=(m)=>[m.prixAchat,m.fraisTransport,m.fraisDedouanement,m.fraisLegalisation,m.fraisImmatriculation,m.autresFrais].reduce((s,v)=>s+Number(v||0),0);
+  const save_=()=>{
+    if(!form.marque||!form.modele){showAlert("Marque et modèle requis","error");return;}
+    mutate(d=>{if(editing)d.motos=d.motos.map(m=>m.id===editing?{...form,id:editing}:m);else d.motos=[...d.motos,{...form,id:gid("moto"),dateCreation:tod()}];showAlert(editing?"Modifié":"Ajouté","success");return d;});
+    setShowF(false);setEditing(null);setForm(em());
+  };
+  const filtered=data.motos.filter(m=>`${m.marque}${m.modele}${m.code}${m.numeroImmat}`.toLowerCase().includes(search.toLowerCase()));
+  return(
+    <div>
+      <PageHeader title="🏍️ Motos" color={C.taxi} onAdd={()=>{setForm(em());setEditing(null);setShowF(true);}} label="+ Moto"/>
+      <input style={{...S.inp,maxWidth:280,marginBottom:12}} placeholder="🔍 Rechercher..." value={search} onChange={e=>setSearch(e.target.value)}/>
+      {showF&&<Modal title={editing?"✏️ Modifier Moto":"➕ Nouvelle Moto"} onClose={()=>setShowF(false)} onSave={save_}>
+        <FG2>{[["code","Code"],["marque","Marque *"],["modele","Modèle *"],["annee","Année"],["couleur","Couleur"],["numeroMoteur","N° Moteur"],["numeroChassis","N° Châssis"],["numeroImmat","N° Immatriculation"],["prixAchat","Prix Achat (HTG)","number"],["dateAchat","Date Achat","date"],["fraisTransport","Frais Transport","number"],["fraisDedouanement","Frais Dédouanement","number"],["fraisLegalisation","Frais Légalisation","number"],["fraisImmatriculation","Frais Immatriculation","number"],["autresFrais","Autres Frais","number"],["numeroAssurance","N° Assurance"],["dateExpAssurance","Exp. Assurance","date"],["kilometrage","Kilométrage","number"]].map(([k,l,t])=>(
+          <FField key={k} label={l}><input style={S.inp} type={t||"text"} value={form[k]||""} onChange={e=>F(k,e.target.value)}/></FField>
+        ))}
+        <FField label="Type"><select style={S.inp} value={form.type} onChange={e=>F("type",e.target.value)}><option>2 roues</option><option>3 roues</option></select></FField>
+        <FField label="État"><select style={S.inp} value={form.etat} onChange={e=>F("etat",e.target.value)}><option>neuve</option><option>usagée</option></select></FField>
+        <FField label="Statut"><select style={S.inp} value={form.statut} onChange={e=>F("statut",e.target.value)}><option>disponible</option><option>attribuée</option><option>en maintenance</option></select></FField>
+        </FG2>
+        <FField label="Description"><textarea style={{...S.inp,height:55,resize:"vertical"}} value={form.description||""} onChange={e=>F("description",e.target.value)}/></FField>
+      </Modal>}
+      <div style={{...S.card,overflowX:"auto"}}>
+        <table style={S.table}>
+          <thead><tr>{["Code","Type","Marque/Modèle","Immat.","État","Statut","Coût Total","Actions"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {filtered.map(m=>(
+              <tr key={m.id}>
+                <td style={S.td}><span style={{...S.badge,background:"#f1f5f9",color:C.textM}}>{m.code||"—"}</span></td>
+                <td style={S.td}><span style={{...S.badge,background:m.type==="2 roues"?"#dbeafe":"#fef3c7",color:m.type==="2 roues"?"#1d4ed8":"#92400e"}}>{m.type}</span></td>
+                <td style={S.td}><b>{m.marque}</b> {m.modele} <span style={{color:C.textL}}>{m.annee}</span></td>
+                <td style={S.td}>{m.numeroImmat||"—"}</td>
+                <td style={S.td}><span style={{color:m.etat==="neuve"?"#22c55e":"#f59e0b"}}>● {m.etat}</span></td>
+                <td style={S.td}><SBadge s={m.statut}/></td>
+                <td style={{...S.td,fontWeight:700}}>{fmt(coutT(m))} HTG</td>
+                <td style={S.td}><RowActions onEdit={()=>{setForm(m);setEditing(m.id);setShowF(true);}} onDel={session.role==="superadmin"?()=>{if(confirm("Supprimer?"))mutate(d=>{d.motos=d.motos.filter(x=>x.id!==m.id);return d;});}:null}/></td>
+              </tr>
+            ))}
+            {!filtered.length&&<EmptyRow cols={8}/>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════ CHAUFFEURS ══════════════════════════════ */
+function GChauffeurs({data,mutate,showAlert,session}){
+  const[showF,setShowF]=useState(false);const[editing,setEditing]=useState(null);const[search,setSearch]=useState("");const[detteId,setDetteId]=useState(null);
+  const em=()=>({code:"",nom:"",prenom:"",sexe:"Masculin",dateNaissance:"",cin:"",telephone:"",whatsapp:"",adresse:"",permis:"",categoriePermis:"",dateExpPermis:"",experience:"",temoinNom:"",temoinTel:"",temoinAdresse:"",temoinRelation:"",temoinCin:"",changementCouleur:"",remplacementMoteur:"",autresModifications:"",statut:"actif"});
+  const[form,setForm]=useState(em());const F=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const calcDette=(ch)=>{const ct=data.contrats.find(c=>c.chauffeurId===ch.id&&c.statut==="actif");if(!ct)return null;const jA=Math.max(0,daysBetween(ct.dateDebut,tod())+1);const txs=data.transactions.filter(t=>t.contratId===ct.id);const totalP=txs.reduce((s,t)=>s+Number(t.montantPaye||0),0);const attendu=jA*Number(ct.montantJournalier||0);return{ct,totalP,attendu,dette:Math.max(0,attendu-totalP),nbP:txs.length};};
+  const save_=()=>{if(!form.nom||!form.prenom){showAlert("Nom et prénom requis","error");return;}mutate(d=>{if(editing)d.chauffeurs=d.chauffeurs.map(c=>c.id===editing?{...form,id:editing}:c);else d.chauffeurs=[...d.chauffeurs,{...form,id:gid("ch"),dateCreation:tod()}];showAlert(editing?"Modifié":"Ajouté","success");return d;});setShowF(false);setEditing(null);setForm(em());};
+  const filtered=data.chauffeurs.filter(c=>`${c.nom}${c.prenom}${c.cin}${c.telephone}`.toLowerCase().includes(search.toLowerCase()));
+  return(
+    <div>
+      <PageHeader title="👤 Chauffeurs" color={C.taxi} onAdd={()=>{setForm(em());setEditing(null);setShowF(true);}} label="+ Chauffeur"/>
+      <input style={{...S.inp,maxWidth:280,marginBottom:12}} placeholder="🔍 Rechercher..." value={search} onChange={e=>setSearch(e.target.value)}/>
+      {showF&&<Modal title={editing?"✏️ Modifier Chauffeur":"➕ Nouveau Chauffeur"} onClose={()=>setShowF(false)} onSave={save_}>
+        <SectionLabel c={C.taxi}>📋 Informations Personnelles</SectionLabel>
+        <FG2>{[["code","Code"],["nom","Nom *"],["prenom","Prénom *"],["cin","CIN/NIF"],["telephone","Téléphone"],["whatsapp","WhatsApp"],["adresse","Adresse"],["dateNaissance","Date Naissance","date"],["permis","N° Permis"],["categoriePermis","Catégorie Permis"],["dateExpPermis","Exp. Permis","date"],["experience","Expérience"]].map(([k,l,t])=>(
+          <FField key={k} label={l}><input style={S.inp} type={t||"text"} value={form[k]||""} onChange={e=>F(k,e.target.value)}/></FField>
+        ))}
+        <FField label="Sexe"><select style={S.inp} value={form.sexe} onChange={e=>F("sexe",e.target.value)}><option>Masculin</option><option>Féminin</option></select></FField>
+        <FField label="Statut"><select style={S.inp} value={form.statut} onChange={e=>F("statut",e.target.value)}><option>actif</option><option>suspendu</option><option>inactif</option></select></FField>
+        </FG2>
+        <SectionLabel c={C.taxi}>👥 Témoin</SectionLabel>
+        <FG2>{[["temoinNom","Nom"],["temoinTel","Téléphone"],["temoinAdresse","Adresse"],["temoinRelation","Relation"],["temoinCin","CIN"]].map(([k,l])=>(
+          <FField key={k} label={l}><input style={S.inp} value={form[k]||""} onChange={e=>F(k,e.target.value)}/></FField>
+        ))}</FG2>
+        <SectionLabel c={C.taxi}>🔧 Modifications Moto</SectionLabel>
+        <FG2>{[["changementCouleur","Couleur"],["remplacementMoteur","Moteur"],["autresModifications","Autres"]].map(([k,l])=>(
+          <FField key={k} label={l}><input style={S.inp} value={form[k]||""} onChange={e=>F(k,e.target.value)}/></FField>
+        ))}</FG2>
+      </Modal>}
+      {detteId&&(()=>{const ch=data.chauffeurs.find(c=>c.id===detteId);const info=calcDette(ch);return(
+        <div style={S.modal}><div style={{...S.mbox,maxWidth:420}}>
+          <h3 style={S.mtitle}>💰 Dette — {ch?.nom} {ch?.prenom}</h3>
+          {!info?<p style={{color:C.textL}}>Aucun contrat actif.</p>:(
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              {[["Attendu",`${fmt(info.attendu)} HTG`],["Payé",`${fmt(info.totalP)} HTG`],["Dette",`${fmt(info.dette)} HTG`],["Paiements",`${info.nbP} jours`],["Fin contrat",info.ct.dateFin],["Journalier",`${fmt(info.ct.montantJournalier)} HTG`]].map(([l,v])=>(
+                <div key={l} style={{background:"#f8fafc",padding:"9px 12px",borderRadius:8}}><div style={{fontSize:11,color:C.textM}}>{l}</div><div style={{fontSize:15,fontWeight:700}}>{v}</div></div>
+              ))}
+              {info.dette>0&&<div style={{gridColumn:"1/-1",background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:10,color:C.danger,fontWeight:700}}>⚠️ Dette : {fmt(info.dette)} HTG</div>}
+            </div>
+          )}
+          <div style={S.mact}><button style={S.bs} onClick={()=>setDetteId(null)}>Fermer</button></div>
+        </div></div>
+      );})()} 
+      <div style={{...S.card,overflowX:"auto"}}>
+        <table style={S.table}>
+          <thead><tr>{["Code","Nom Complet","Téléphone","CIN","Statut","Dette","Actions"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {filtered.map(c=>{const info=calcDette(c);return(
+              <tr key={c.id}>
+                <td style={S.td}><span style={{...S.badge,background:"#f1f5f9",color:C.textM}}>{c.code||"—"}</span></td>
+                <td style={S.td}><b>{c.nom} {c.prenom}</b></td>
+                <td style={S.td}>{c.telephone||"—"}</td>
+                <td style={S.td}>{c.cin||"—"}</td>
+                <td style={S.td}><SBadge s={c.statut}/></td>
+                <td style={S.td}>{info?<span style={{color:info.dette>0?C.danger:"#22c55e",fontWeight:700}}>{fmt(info.dette)} HTG</span>:"—"}</td>
+                <td style={S.td}><div style={{display:"flex",gap:5}}>
+                  <button style={S.bie} onClick={()=>{setForm(c);setEditing(c.id);setShowF(true);}}>✏️</button>
+                  <button style={{...S.bie,background:"#fef3c7"}} onClick={()=>setDetteId(c.id)}>💰</button>
+                </div></td>
+              </tr>
+            );})}
+            {!filtered.length&&<EmptyRow cols={7}/>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════ CONTRATS ══════════════════════════════ */
+function GContrats({data,mutate,showAlert}){
+  const[showF,setShowF]=useState(false);const[editing,setEditing]=useState(null);
+  const em=()=>({numero:"",chauffeurId:"",motoId:"",dateDebut:tod(),dureeContrat:14,montantJournalier:200,avanceVersee:0,statut:"actif",remarque:""});
+  const[form,setForm]=useState(em());const F=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const montantEst=Number(form.dureeContrat)*26*Number(form.montantJournalier);
+  const save_=()=>{if(!form.chauffeurId||!form.motoId){showAlert("Chauffeur et moto requis","error");return;}const dateFin=addM(form.dateDebut,form.dureeContrat);mutate(d=>{const ct={...form,id:editing||gid("ct"),dateFin,montantTotal:montantEst,dateCreation:tod()};if(editing)d.contrats=d.contrats.map(c=>c.id===editing?ct:c);else d.contrats=[...d.contrats,ct];showAlert(editing?"Modifié":"Créé","success");return d;});setShowF(false);setEditing(null);setForm(em());};
+  return(
+    <div>
+      <PageHeader title="📋 Contrats" color={C.taxi} onAdd={()=>{setForm(em());setEditing(null);setShowF(true);}} label="+ Contrat"/>
+      {showF&&<Modal title={editing?"✏️ Modifier":"📋 Nouveau Contrat"} onClose={()=>setShowF(false)} onSave={save_}>
+        <FG2>
+          <FField label="N° Contrat"><input style={S.inp} value={form.numero} onChange={e=>F("numero",e.target.value)}/></FField>
+          <FField label="Chauffeur *"><select style={S.inp} value={form.chauffeurId} onChange={e=>F("chauffeurId",e.target.value)}><option value="">-- Sélectionner --</option>{data.chauffeurs.map(c=><option key={c.id} value={c.id}>{c.nom} {c.prenom}</option>)}</select></FField>
+          <FField label="Moto *"><select style={S.inp} value={form.motoId} onChange={e=>F("motoId",e.target.value)}><option value="">-- Sélectionner --</option>{data.motos.map(m=><option key={m.id} value={m.id}>{m.marque} {m.modele} — {m.numeroImmat||m.code}</option>)}</select></FField>
+          <FField label="Date Début"><input style={S.inp} type="date" value={form.dateDebut} onChange={e=>F("dateDebut",e.target.value)}/></FField>
+          <FField label="Durée (mois)"><input style={S.inp} type="number" value={form.dureeContrat} onChange={e=>F("dureeContrat",e.target.value)}/></FField>
+          <FField label="Montant Journalier (HTG)"><input style={S.inp} type="number" value={form.montantJournalier} onChange={e=>F("montantJournalier",e.target.value)}/></FField>
+          <FField label="Avance Versée (HTG)"><input style={S.inp} type="number" value={form.avanceVersee} onChange={e=>F("avanceVersee",e.target.value)}/></FField>
+          <FField label="Statut"><select style={S.inp} value={form.statut} onChange={e=>F("statut",e.target.value)}><option>actif</option><option>en retard</option><option>suspendu</option><option>terminé</option><option>transféré</option></select></FField>
+        </FG2>
+        <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:8,padding:"10px 14px",marginBottom:10,fontWeight:700,color:"#166534"}}>💰 Total Estimé : {fmt(montantEst)} HTG</div>
+        <FField label="Remarque"><textarea style={{...S.inp,height:55,resize:"vertical"}} value={form.remarque||""} onChange={e=>F("remarque",e.target.value)}/></FField>
+      </Modal>}
+      <div style={{...S.card,overflowX:"auto"}}>
+        <table style={S.table}>
+          <thead><tr>{["N°","Chauffeur","Moto","Début","Fin","Journalier","Progression","Statut","Actions"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {data.contrats.map(c=>{const ch=data.chauffeurs.find(x=>x.id===c.chauffeurId);const m=data.motos.find(x=>x.id===c.motoId);const paye=data.transactions.filter(t=>t.contratId===c.id).reduce((s,t)=>s+Number(t.montantPaye||0),0);const prog=c.montantTotal>0?Math.min(100,(paye/c.montantTotal)*100):0;return(
+              <tr key={c.id}>
+                <td style={S.td}><span style={{...S.badge,background:"#f1f5f9",color:C.textM}}>{c.numero||c.id.slice(-4)}</span></td>
+                <td style={S.td}>{ch?.nom} {ch?.prenom}</td>
+                <td style={S.td}>{m?.marque} {m?.modele}</td>
+                <td style={S.td}>{c.dateDebut}</td><td style={S.td}>{c.dateFin}</td>
+                <td style={S.td}>{fmt(c.montantJournalier)} HTG</td>
+                <td style={{...S.td,minWidth:130}}>
+                  <div style={{fontSize:11}}>{fmt(paye)}/{fmt(c.montantTotal)} HTG</div>
+                  <div style={{background:"#e2e8f0",borderRadius:4,height:5,marginTop:3}}><div style={{background:prog>=100?"#22c55e":C.taxi,width:`${prog}%`,height:"100%",borderRadius:4}}/></div>
+                  <div style={{fontSize:10,color:C.textL}}>{Math.round(prog)}%</div>
+                </td>
+                <td style={S.td}><SBadge s={c.statut}/></td>
+                <td style={S.td}><button style={S.bie} onClick={()=>{setForm(c);setEditing(c.id);setShowF(true);}}>✏️</button></td>
+              </tr>
+            );})}
+            {!data.contrats.length&&<EmptyRow cols={9}/>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════ TRANSACTIONS ══════════════════════════════ */
+function GTransactions({data,mutate,showAlert,session}){
+  const[showF,setShowF]=useState(false);const[filter,setFilter]=useState("");const[releve,setReleve]=useState(null);
+  const em=()=>({chauffeurId:"",date:tod(),montantPaye:"",modePaiement:"Espèces",remarque:""});
+  const[form,setForm]=useState(em());const F=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const save_=()=>{if(!form.chauffeurId||!form.montantPaye){showAlert("Chauffeur et montant requis","error");return;}const ct=data.contrats.find(c=>c.chauffeurId===form.chauffeurId&&c.statut==="actif");const att=ct?Number(ct.montantJournalier):0;mutate(d=>{d.transactions=[...d.transactions,{...form,id:gid("tx"),contratId:ct?.id||"",montantAttendu:att,balance:att-Number(form.montantPaye),agent:session.nom,heure:new Date().toLocaleTimeString("fr")}];return d;});showAlert("Paiement enregistré","success");setShowF(false);setForm(em());};
+  const filtered=data.transactions.filter(t=>!filter||t.chauffeurId===filter).slice().reverse();
+  return(
+    <div>
+      <PageHeader title="💳 Paiements Taxi" color={C.taxi} onAdd={()=>{setForm(em());setShowF(true);}} label="+ Paiement"/>
+      <div style={{display:"flex",gap:10,marginBottom:12,flexWrap:"wrap"}}>
+        <select style={{...S.inp,maxWidth:240}} value={filter} onChange={e=>setFilter(e.target.value)}><option value="">Tous les chauffeurs</option>{data.chauffeurs.map(c=><option key={c.id} value={c.id}>{c.nom} {c.prenom}</option>)}</select>
+        {filter&&<button style={S.bTaxi} onClick={()=>setReleve(filter)}>📄 Relevé</button>}
+      </div>
+      {showF&&<Modal title="💳 Enregistrer Paiement" onClose={()=>setShowF(false)} onSave={save_}>
+        <FG2>
+          <FField label="Chauffeur *"><select style={S.inp} value={form.chauffeurId} onChange={e=>F("chauffeurId",e.target.value)}><option value="">-- Sélectionner --</option>{data.chauffeurs.map(c=><option key={c.id} value={c.id}>{c.nom} {c.prenom}</option>)}</select></FField>
+          <FField label="Date"><input style={S.inp} type="date" value={form.date} onChange={e=>F("date",e.target.value)}/></FField>
+          <FField label="Montant Payé (HTG) *"><input style={S.inp} type="number" value={form.montantPaye} onChange={e=>F("montantPaye",e.target.value)}/></FField>
+          <FField label="Mode de Paiement"><select style={S.inp} value={form.modePaiement} onChange={e=>F("modePaiement",e.target.value)}><option>Espèces</option><option>MonCash</option><option>Natcash</option><option>Virement</option></select></FField>
+        </FG2>
+        {form.chauffeurId&&(()=>{const ct=data.contrats.find(c=>c.chauffeurId===form.chauffeurId&&c.statut==="actif");if(!ct)return<InfoBox c="#fef3c7">⚠️ Aucun contrat actif</InfoBox>;const bal=Number(ct.montantJournalier)-Number(form.montantPaye||0);return<InfoBox c="#f0fdf4">Attendu : <b>{fmt(ct.montantJournalier)} HTG</b>{form.montantPaye&&<> · Balance : <b style={{color:bal<=0?"#166534":C.danger}}>{fmt(bal)} HTG</b></>}</InfoBox>;})()}
+        <FField label="Remarque"><input style={S.inp} value={form.remarque||""} onChange={e=>F("remarque",e.target.value)}/></FField>
+      </Modal>}
+      {releve&&(()=>{const ch=data.chauffeurs.find(c=>c.id===releve);const ct=data.contrats.find(c=>c.chauffeurId===releve);const txs=data.transactions.filter(t=>t.chauffeurId===releve).sort((a,b)=>a.date.localeCompare(b.date));const total=txs.reduce((s,t)=>s+Number(t.montantPaye||0),0);return(
+        <div style={S.modal}><div style={{...S.mbox,maxWidth:540}}>
+          <h3 style={S.mtitle}>📄 Relevé — {ch?.nom} {ch?.prenom}</h3>
+          {ct&&<InfoBox c="#f0f9ff">{ct.dateDebut} → {ct.dateFin} | Journalier : <b>{fmt(ct.montantJournalier)} HTG</b></InfoBox>}
+          <Sp/>
+          <div style={{overflowX:"auto"}}>
+            <table style={S.table}>
+              <thead><tr><th style={S.th}>Date</th><th style={S.th}>Payé</th><th style={S.th}>Balance</th><th style={S.th}>Mode</th></tr></thead>
+              <tbody>{txs.map(t=><tr key={t.id}><td style={S.td}>{t.date}</td><td style={{...S.td,color:"#22c55e",fontWeight:700}}>{fmt(t.montantPaye)} HTG</td><td style={{...S.td,color:Number(t.balance)>0?C.danger:"#22c55e"}}>{fmt(t.balance)} HTG</td><td style={S.td}>{t.modePaiement}</td></tr>)}
+              <tr><td style={{...S.td,fontWeight:700}}>TOTAL</td><td style={{...S.td,fontWeight:700,color:"#22c55e"}}>{fmt(total)} HTG</td><td colSpan={2}/></tr>
+              </tbody>
+            </table>
+          </div>
+          <div style={S.mact}><button style={S.bs} onClick={()=>setReleve(null)}>Fermer</button><button style={S.bp} onClick={()=>window.print()}>🖨️ Imprimer</button></div>
+        </div></div>
+      );})()} 
+      <div style={{...S.card,overflowX:"auto"}}>
+        <table style={S.table}>
+          <thead><tr>{["Date","Heure","Chauffeur","Payé","Balance","Mode","Agent"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {filtered.map(t=>{const ch=data.chauffeurs.find(c=>c.id===t.chauffeurId);return(
+              <tr key={t.id}><td style={S.td}>{t.date}</td><td style={S.td}>{t.heure||"—"}</td><td style={S.td}>{ch?.nom} {ch?.prenom}</td><td style={{...S.td,color:"#22c55e",fontWeight:700}}>{fmt(t.montantPaye)} HTG</td><td style={{...S.td,color:Number(t.balance)>0?C.danger:"#22c55e"}}>{fmt(t.balance)} HTG</td><td style={S.td}>{t.modePaiement}</td><td style={S.td}>{t.agent}</td></tr>
+            );})}
+            {!filtered.length&&<EmptyRow cols={7}/>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════ DÉPENSES ══════════════════════════════ */
+const CATS_DEP=["Maintenance","Réparation","Transfert","Légalisation","Assurance","Achat pièces","Carburant","Administration","Salaire","Autre"];
+function GDepenses({data,mutate,showAlert,session}){
+  const[showF,setShowF]=useState(false);const[editing,setEditing]=useState(null);
+  const em=()=>({numero:"",date:tod(),categorie:"Maintenance",description:"",montant:"",beneficiaire:"",remarque:""});
+  const[form,setForm]=useState(em());const F=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const total=data.depenses.reduce((s,d)=>s+Number(d.montant||0),0);
+  const save_=()=>{if(!form.montant||!form.description){showAlert("Montant et description requis","error");return;}mutate(d=>{const dep={...form,id:editing||gid("dep"),agent:session.nom};if(editing)d.depenses=d.depenses.map(x=>x.id===editing?dep:x);else d.depenses=[...d.depenses,dep];showAlert(editing?"Modifié":"Ajouté","success");return d;});setShowF(false);setEditing(null);setForm(em());};
+  return(
+    <div>
+      <PageHeader title="💸 Dépenses Taxi" color={C.taxi} onAdd={()=>{setForm(em());setEditing(null);setShowF(true);}} label="+ Dépense"/>
+      <StatCard label="Total Dépenses Taxi" val={`${fmt(total)} HTG`} color={C.danger}/>
+      {showF&&<Modal title={editing?"✏️ Modifier":"➕ Nouvelle Dépense"} onClose={()=>setShowF(false)} onSave={save_}>
+        <FG2>
+          <FField label="N°"><input style={S.inp} value={form.numero} onChange={e=>F("numero",e.target.value)}/></FField>
+          <FField label="Date"><input style={S.inp} type="date" value={form.date} onChange={e=>F("date",e.target.value)}/></FField>
+          <FField label="Catégorie"><select style={S.inp} value={form.categorie} onChange={e=>F("categorie",e.target.value)}>{CATS_DEP.map(c=><option key={c}>{c}</option>)}</select></FField>
+          <FField label="Montant (HTG) *"><input style={S.inp} type="number" value={form.montant} onChange={e=>F("montant",e.target.value)}/></FField>
+          <FField label="Bénéficiaire"><input style={S.inp} value={form.beneficiaire||""} onChange={e=>F("beneficiaire",e.target.value)}/></FField>
+          <FField label="Description *"><input style={S.inp} value={form.description} onChange={e=>F("description",e.target.value)}/></FField>
+        </FG2>
+        <FField label="Remarque"><input style={S.inp} value={form.remarque||""} onChange={e=>F("remarque",e.target.value)}/></FField>
+      </Modal>}
+      <div style={{...S.card,overflowX:"auto",marginTop:12}}>
+        <table style={S.table}>
+          <thead><tr>{["N°","Date","Catégorie","Description","Montant","Bénéficiaire","Actions"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {data.depenses.slice().reverse().map(d=>(
+              <tr key={d.id}><td style={S.td}><span style={{...S.badge,background:"#f1f5f9",color:C.textM}}>{d.numero||"—"}</span></td><td style={S.td}>{d.date}</td><td style={S.td}><span style={{...S.badge,background:"#fef3c7",color:"#92400e"}}>{d.categorie}</span></td><td style={S.td}>{d.description}</td><td style={{...S.td,color:C.danger,fontWeight:700}}>{fmt(d.montant)} HTG</td><td style={S.td}>{d.beneficiaire||"—"}</td><td style={S.td}><RowActions onEdit={()=>{setForm(d);setEditing(d.id);setShowF(true);}} onDel={session.role==="superadmin"?()=>{if(confirm("Supprimer?"))mutate(x=>{x.depenses=x.depenses.filter(i=>i.id!==d.id);return x;});}:null}/></td></tr>
+            ))}
+            {!data.depenses.length&&<EmptyRow cols={7}/>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════ PERTES ══════════════════════════════ */
+function GPertes({data,mutate,showAlert,session}){
+  const[showF,setShowF]=useState(false);
+  const em=()=>({type:"Vol",motoId:"",chauffeurId:"",date:tod(),description:"",coutEstime:"",montantPerdu:"",statutDossier:"Ouvert"});
+  const[form,setForm]=useState(em());const F=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const total=data.pertes.reduce((s,p)=>s+Number(p.coutEstime||0),0);
+  return(
+    <div>
+      <PageHeader title="⚠️ Pertes" color={C.danger} onAdd={()=>{setForm(em());setShowF(true);}} label="+ Perte"/>
+      <StatCard label="Coût Total des Pertes" val={`${fmt(total)} HTG`} color={C.danger}/>
+      {showF&&<Modal title="⚠️ Enregistrer Perte" onClose={()=>setShowF(false)} onSave={()=>{if(!form.coutEstime){showAlert("Coût estimé requis","error");return;}mutate(d=>{d.pertes=[...d.pertes,{...form,id:gid("p"),agent:session.nom}];return d;});showAlert("Perte enregistrée","success");setShowF(false);setForm(em());}}>
+        <FG2>
+          <FField label="Type"><select style={S.inp} value={form.type} onChange={e=>F("type",e.target.value)}>{["Vol","Accident","Disparition","Incendie","Panne grave","Autre"].map(t=><option key={t}>{t}</option>)}</select></FField>
+          <FField label="Date"><input style={S.inp} type="date" value={form.date} onChange={e=>F("date",e.target.value)}/></FField>
+          <FField label="Moto"><select style={S.inp} value={form.motoId} onChange={e=>F("motoId",e.target.value)}><option value="">--</option>{data.motos.map(m=><option key={m.id} value={m.id}>{m.marque} {m.modele}</option>)}</select></FField>
+          <FField label="Chauffeur"><select style={S.inp} value={form.chauffeurId} onChange={e=>F("chauffeurId",e.target.value)}><option value="">--</option>{data.chauffeurs.map(c=><option key={c.id} value={c.id}>{c.nom} {c.prenom}</option>)}</select></FField>
+          <FField label="Coût Estimé (HTG)"><input style={S.inp} type="number" value={form.coutEstime} onChange={e=>F("coutEstime",e.target.value)}/></FField>
+          <FField label="Montant Perdu (HTG)"><input style={S.inp} type="number" value={form.montantPerdu} onChange={e=>F("montantPerdu",e.target.value)}/></FField>
+          <FField label="Statut Dossier"><select style={S.inp} value={form.statutDossier} onChange={e=>F("statutDossier",e.target.value)}><option>Ouvert</option><option>En cours</option><option>Résolu</option><option>Fermé</option></select></FField>
+        </FG2>
+        <FField label="Description"><textarea style={{...S.inp,height:60,resize:"vertical"}} value={form.description} onChange={e=>F("description",e.target.value)}/></FField>
+      </Modal>}
+      <div style={{...S.card,overflowX:"auto",marginTop:12}}>
+        <table style={S.table}>
+          <thead><tr>{["Date","Type","Moto","Chauffeur","Coût Estimé","Montant Perdu","Statut"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {data.pertes.slice().reverse().map(p=>{const m=data.motos.find(x=>x.id===p.motoId);const ch=data.chauffeurs.find(x=>x.id===p.chauffeurId);return(
+              <tr key={p.id}><td style={S.td}>{p.date}</td><td style={S.td}><span style={{...S.badge,background:"#fef2f2",color:C.danger}}>{p.type}</span></td><td style={S.td}>{m?`${m.marque} ${m.modele}`:"—"}</td><td style={S.td}>{ch?`${ch.nom} ${ch.prenom}`:"—"}</td><td style={{...S.td,color:C.danger,fontWeight:700}}>{fmt(p.coutEstime)} HTG</td><td style={S.td}>{fmt(p.montantPerdu)} HTG</td><td style={S.td}><SBadge s={p.statutDossier}/></td></tr>
+            );})}
+            {!data.pertes.length&&<EmptyRow cols={7}/>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════ TRANSFERTS ══════════════════════════════ */
+function GTransferts({data,mutate,showAlert}){
+  const today=tod();
+  const proches=data.contrats.filter(c=>{if(c.statut!=="actif")return false;const j=daysBetween(today,c.dateFin);return j>=0&&j<=60;});
+  const clotured=data.contrats.filter(c=>c.statut==="transféré");
+  const doTransfert=(id)=>{if(!confirm("Confirmer le transfert?"))return;mutate(d=>{d.contrats=d.contrats.map(c=>c.id===id?{...c,statut:"transféré",dateTransfert:today}:c);return d;});showAlert("🎉 Moto transférée!","success");};
+  return(
+    <div>
+      <h2 style={{fontSize:18,fontWeight:800,color:C.taxi,marginBottom:14}}>🔄 Transferts</h2>
+      <div style={{...S.card,borderLeft:`4px solid ${C.taxi}`,marginBottom:12}}>
+        <div style={{fontWeight:700,color:C.taxi,marginBottom:10}}>⏰ Contrats Proches Échéance ({proches.length})</div>
+        {!proches.length?<p style={{color:C.textL,fontSize:13}}>Aucun contrat proche.</p>:(
+          <div style={{overflowX:"auto"}}><table style={S.table}>
+            <thead><tr>{["Chauffeur","Moto","Fin","Jours","Payé","Total","Action"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+            <tbody>{proches.map(c=>{const ch=data.chauffeurs.find(x=>x.id===c.chauffeurId);const m=data.motos.find(x=>x.id===c.motoId);const paye=data.transactions.filter(t=>t.contratId===c.id).reduce((s,t)=>s+Number(t.montantPaye||0),0);const jr=daysBetween(today,c.dateFin);const ok=paye>=Number(c.montantTotal||0);return(
+              <tr key={c.id}><td style={S.td}>{ch?.nom} {ch?.prenom}</td><td style={S.td}>{m?.marque} {m?.modele}</td><td style={S.td}>{c.dateFin}</td><td style={{...S.td,color:jr<=14?C.danger:C.taxi,fontWeight:700}}>{jr}j</td><td style={{...S.td,color:"#22c55e",fontWeight:700}}>{fmt(paye)} HTG</td><td style={S.td}>{fmt(c.montantTotal)} HTG</td><td style={S.td}>{ok?<button style={{...S.bp,fontSize:12,padding:"6px 12px"}} onClick={()=>doTransfert(c.id)}>✅ Transférer</button>:<span style={{color:C.danger,fontSize:12}}>⚠️ Solde dû</span>}</td></tr>
+            );})}</tbody>
+          </table></div>
+        )}
+      </div>
+      <div style={{...S.card,overflowX:"auto"}}>
+        <div style={{fontWeight:700,color:"#22c55e",marginBottom:10}}>✅ Motos Transférées ({clotured.length})</div>
+        <table style={S.table}>
+          <thead><tr>{["Chauffeur","Moto","Début","Fin","Total Payé","Date Transfert"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+          <tbody>{clotured.map(c=>{const ch=data.chauffeurs.find(x=>x.id===c.chauffeurId);const m=data.motos.find(x=>x.id===c.motoId);const paye=data.transactions.filter(t=>t.contratId===c.id).reduce((s,t)=>s+Number(t.montantPaye||0),0);return(
+            <tr key={c.id}><td style={S.td}>{ch?.nom} {ch?.prenom}</td><td style={S.td}>{m?.marque} {m?.modele}</td><td style={S.td}>{c.dateDebut}</td><td style={S.td}>{c.dateFin}</td><td style={{...S.td,color:"#22c55e",fontWeight:700}}>{fmt(paye)} HTG</td><td style={S.td}>{c.dateTransfert||"—"}</td></tr>
+          );})}
+          {!clotured.length&&<EmptyRow cols={6}/>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════ PRODUITS ══════════════════════════════ */
+function GProduits({data,mutate,showAlert,session}){
+  const[showF,setShowF]=useState(false);const[editing,setEditing]=useState(null);const[search,setSearch]=useState("");
+  const em=()=>({code:"",nom:"",categorie:"",qualite:"",sku:"",unitesParCaisse:1,stockUnites:0,minStockAlert:10,prixAchatCaisse:0,fraisCaisse:0,description:"",prixUnite:0,prixTier3:0,prixTier6:0,prixTier12:0,prixCaisse1:0,prixCaisse3Plus:0});
+  const[form,setForm]=useState(em());const F=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const coutUnite=()=>{const total=Number(form.prixAchatCaisse||0)+Number(form.fraisCaisse||0);const u=Number(form.unitesParCaisse||1);return u>0?(total/u).toFixed(2):0;};
+  const save_=()=>{if(!form.nom||!form.categorie){showAlert("Nom et catégorie requis","error");return;}const cout=coutUnite();mutate(d=>{const p={...form,id:editing||gid("prod"),coutUnite:cout,coutTotalCaisse:Number(form.prixAchatCaisse||0)+Number(form.fraisCaisse||0),dateCreation:tod()};if(editing)d.produits=d.produits.map(x=>x.id===editing?p:x);else d.produits=[...d.produits,p];showAlert(editing?"Modifié":"Ajouté","success");return d;});setShowF(false);setEditing(null);setForm(em());};
+  const filtered=data.produits.filter(p=>`${p.nom}${p.categorie}${p.sku}`.toLowerCase().includes(search.toLowerCase()));
+  const stockBas=p=>Number(p.stockUnites||0)<=Number(p.minStockAlert||0);
+  return(
+    <div>
+      <PageHeader title="📦 Produits" color={C.commerce} onAdd={()=>{setForm(em());setEditing(null);setShowF(true);}} label="+ Produit"/>
+      <input style={{...S.inp,maxWidth:280,marginBottom:12}} placeholder="🔍 Rechercher..." value={search} onChange={e=>setSearch(e.target.value)}/>
+      {showF&&<Modal title={editing?"✏️ Modifier Produit":"➕ Nouveau Produit"} onClose={()=>setShowF(false)} onSave={save_}>
+        <SectionLabel c={C.commerce}>📋 Informations Générales</SectionLabel>
+        <FG2>
+          <FField label="Nom du Produit *"><input style={S.inp} value={form.nom} onChange={e=>F("nom",e.target.value)}/></FField>
+          <FField label="Catégorie *"><input style={S.inp} value={form.categorie} onChange={e=>F("categorie",e.target.value)}/></FField>
+          <FField label="Qualité / Grade"><input style={S.inp} value={form.qualite||""} onChange={e=>F("qualite",e.target.value)}/></FField>
+          <FField label="Code SKU"><input style={S.inp} value={form.sku||""} onChange={e=>F("sku",e.target.value)}/></FField>
+          <FField label="Unités par Caisse"><input style={S.inp} type="number" value={form.unitesParCaisse} onChange={e=>F("unitesParCaisse",e.target.value)}/></FField>
+          <FField label="Stock Initial (unités)"><input style={S.inp} type="number" value={form.stockUnites} onChange={e=>F("stockUnites",e.target.value)}/></FField>
+          <FField label="Alerte Stock Minimum"><input style={S.inp} type="number" value={form.minStockAlert} onChange={e=>F("minStockAlert",e.target.value)}/></FField>
+        </FG2>
+        <SectionLabel c={C.commerce}>💰 Coûts d'Achat</SectionLabel>
+        <FG2>
+          <FField label="Prix Achat / Caisse (HTG)"><input style={S.inp} type="number" value={form.prixAchatCaisse} onChange={e=>F("prixAchatCaisse",e.target.value)}/></FField>
+          <FField label="Frais / Caisse (HTG)"><input style={S.inp} type="number" value={form.fraisCaisse} onChange={e=>F("fraisCaisse",e.target.value)}/></FField>
+        </FG2>
+        <InfoBox c="#f0fdf4">Coût unitaire calculé : <b>{coutUnite()} HTG</b></InfoBox>
+        <Sp/>
+        <SectionLabel c={C.commerce}>🏷️ Paliers de Prix de Vente</SectionLabel>
+        <FG2>
+          <FField label="Prix Unité (HTG)"><input style={S.inp} type="number" value={form.prixUnite} onChange={e=>F("prixUnite",e.target.value)}/></FField>
+          <FField label="Prix x3 unités (HTG)"><input style={S.inp} type="number" value={form.prixTier3} onChange={e=>F("prixTier3",e.target.value)}/></FField>
+          <FField label="Prix x6 unités (HTG)"><input style={S.inp} type="number" value={form.prixTier6} onChange={e=>F("prixTier6",e.target.value)}/></FField>
+          <FField label="Prix x12 unités (HTG)"><input style={S.inp} type="number" value={form.prixTier12} onChange={e=>F("prixTier12",e.target.value)}/></FField>
+          <FField label="Prix 1 Caisse (HTG)"><input style={S.inp} type="number" value={form.prixCaisse1} onChange={e=>F("prixCaisse1",e.target.value)}/></FField>
+          <FField label="Prix 3+ Caisses (HTG)"><input style={S.inp} type="number" value={form.prixCaisse3Plus} onChange={e=>F("prixCaisse3Plus",e.target.value)}/></FField>
+        </FG2>
+        <FField label="Description"><textarea style={{...S.inp,height:55,resize:"vertical"}} value={form.description||""} onChange={e=>F("description",e.target.value)}/></FField>
+      </Modal>}
+      <div style={{...S.card,overflowX:"auto"}}>
+        <table style={S.table}>
+          <thead><tr>{["Nom","Catégorie","SKU","Stock","Coût Unitaire","Prix Unité","Prix Caisse","Actions"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {filtered.map(p=>(
+              <tr key={p.id}>
+                <td style={S.td}><b>{p.nom}</b><br/><span style={{fontSize:11,color:C.textL}}>{p.qualite}</span></td>
+                <td style={S.td}><span style={{...S.badge,background:C.commerceL,color:"#065f46"}}>{p.categorie}</span></td>
+                <td style={S.td}>{p.sku||"—"}</td>
+                <td style={S.td}><span style={{color:stockBas(p)?C.danger:"#22c55e",fontWeight:700}}>{p.stockUnites||0}</span><span style={{fontSize:11,color:C.textL}}> un.</span>{stockBas(p)&&<span style={{marginLeft:4,fontSize:11,color:C.danger}}>⚠️</span>}</td>
+                <td style={S.td}>{fmt(p.coutUnite||0)} HTG</td>
+                <td style={S.td}>{fmt(p.prixUnite||0)} HTG</td>
+                <td style={S.td}>{fmt(p.prixCaisse1||0)} HTG</td>
+                <td style={S.td}><RowActions onEdit={()=>{setForm(p);setEditing(p.id);setShowF(true);}} onDel={session.role==="superadmin"?()=>{if(confirm("Supprimer?"))mutate(d=>{d.produits=d.produits.filter(x=>x.id!==p.id);return d;});}:null}/></td>
+              </tr>
+            ))}
+            {!filtered.length&&<EmptyRow cols={8}/>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════ VENTES ══════════════════════════════ */
+function GVentes({data,mutate,showAlert,session}){
+  const[showF,setShowF]=useState(false);const[viewId,setViewId]=useState(null);
+  const[form,setForm]=useState({clientNom:"",clientTel:"",date:tod(),items:[],remise:0,modePaiement:"Espèces",statutPaiement:"Payé",montantVerse:"",notes:""});
+  const[itemForm,setItemForm]=useState({produitId:"",type:"unites",quantite:1,palier:"prixUnite"});
+
+  const PALIERS=[["prixUnite","Unité"],["prixTier3","x3 unités"],["prixTier6","x6 unités"],["prixTier12","x12 unités"],["prixCaisse1","1 Caisse"],["prixCaisse3Plus","3+ Caisses"]];
+
+  const addItem=()=>{
+    const p=data.produits.find(x=>x.id===itemForm.produitId);
+    if(!p){showAlert("Sélectionner un produit","error");return;}
+    const qte=Number(itemForm.quantite||1);
+    const prix=Number(p[itemForm.palier]||0);
+    const unite=itemForm.palier.includes("Caisse")?Number(p.unitesParCaisse||1):1;
+    const totalUnites=qte*unite;
+    const lineTotal=prix*qte;
+    const coutTotal=Number(p.coutUnite||0)*totalUnites;
+    const profit=lineTotal-coutTotal;
+    const item={id:gid("li"),produitId:p.id,produitNom:p.nom,palier:itemForm.palier,palierLabel:PALIERS.find(x=>x[0]===itemForm.palier)?.[1],quantite:qte,totalUnites,prixUnitaire:prix,lineTotal,coutTotal,profit};
+    setForm(f=>({...f,items:[...f.items,item]}));
+    setItemForm({produitId:"",type:"unites",quantite:1,palier:"prixUnite"});
+  };
+
+  const calcTotals=()=>{
+    const sub=form.items.reduce((s,i)=>s+i.lineTotal,0);
+    const total=sub-Number(form.remise||0);
+    const profitNet=form.items.reduce((s,i)=>s+i.profit,0)-Number(form.remise||0);
+    const balance=total-Number(form.montantVerse||total);
+    return{sub,total,profitNet,balance};
+  };
+
+  const save_=()=>{
+    if(!form.items.length){showAlert("Ajouter au moins un produit","error");return;}
+    const{sub,total,profitNet,balance}=calcTotals();
+    mutate(d=>{
+      const vente={...form,id:gid("vt"),numero:`FACT-${Date.now()}`,sous_total:sub,total,profitNet,balance,dateCreation:new Date().toISOString()};
+      d.ventes=[...d.ventes,vente];
+      // Mise à jour stock
+      form.items.forEach(item=>{
+        d.produits=d.produits.map(p=>p.id===item.produitId?{...p,stockUnites:Math.max(0,Number(p.stockUnites||0)-item.totalUnites)}:p);
+        d.stockMovements=[...d.stockMovements,{id:gid("mv"),date:form.date,produitId:item.produitId,produitNom:item.produitNom,type:"Sortie (Vente)",quantite:-item.totalUnites,ref:vente.numero}];
+      });
+      return d;
+    });
+    showAlert("Vente enregistrée","success");setShowF(false);
+    setForm({clientNom:"",clientTel:"",date:tod(),items:[],remise:0,modePaiement:"Espèces",statutPaiement:"Payé",montantVerse:"",notes:""});
+  };
+
+  const{sub,total,profitNet,balance}=calcTotals();
+  const vente=data.ventes.find(v=>v.id===viewId);
+
+  return(
+    <div>
+      <PageHeader title="🧾 Ventes" color={C.commerce} onAdd={()=>setShowF(true)} label="+ Nouvelle Vente"/>
+      {showF&&(
+        <div style={S.modal}><div style={{...S.mbox,maxWidth:720}}>
+          <h3 style={S.mtitle}>🧾 Nouvelle Vente</h3>
+          <SectionLabel c={C.commerce}>👥 Client</SectionLabel>
+          <FG2>
+            <FField label="Nom du Client"><input style={S.inp} value={form.clientNom} onChange={e=>setForm(f=>({...f,clientNom:e.target.value}))}/></FField>
+            <FField label="Téléphone"><input style={S.inp} value={form.clientTel} onChange={e=>setForm(f=>({...f,clientTel:e.target.value}))}/></FField>
+            <FField label="Date"><input style={S.inp} type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}/></FField>
+            <FField label="Mode de Paiement"><select style={S.inp} value={form.modePaiement} onChange={e=>setForm(f=>({...f,modePaiement:e.target.value}))}><option>Espèces</option><option>MonCash</option><option>Natcash</option><option>Virement</option><option>Crédit</option></select></FField>
+            <FField label="Statut Paiement"><select style={S.inp} value={form.statutPaiement} onChange={e=>setForm(f=>({...f,statutPaiement:e.target.value}))}><option>Payé</option><option>Partiel</option><option>Impayé</option></select></FField>
+            <FField label="Montant Versé (HTG)"><input style={S.inp} type="number" value={form.montantVerse} onChange={e=>setForm(f=>({...f,montantVerse:e.target.value}))}/></FField>
+          </FG2>
+          <SectionLabel c={C.commerce}>📦 Ajouter Produit</SectionLabel>
+          <div style={{background:"#f8fafc",borderRadius:10,padding:12,marginBottom:10}}>
+            <div style={S.fg2}>
+              <FField label="Produit"><select style={S.inp} value={itemForm.produitId} onChange={e=>setItemForm(f=>({...f,produitId:e.target.value}))}><option value="">-- Sélectionner --</option>{data.produits.map(p=><option key={p.id} value={p.id}>{p.nom} (Stock: {p.stockUnites||0})</option>)}</select></FField>
+              <FField label="Palier de Prix"><select style={S.inp} value={itemForm.palier} onChange={e=>setItemForm(f=>({...f,palier:e.target.value}))}>{PALIERS.map(([k,l])=>{const p=data.produits.find(x=>x.id===itemForm.produitId);return<option key={k} value={k}>{l}{p?` — ${fmt(p[k]||0)} HTG`:""}</option>;})}</select></FField>
+              <FField label="Quantité"><input style={S.inp} type="number" min="1" value={itemForm.quantite} onChange={e=>setItemForm(f=>({...f,quantite:e.target.value}))}/></FField>
+            </div>
+            <button style={{...S.bCommerce,fontSize:12}} onClick={addItem}>+ Ajouter à la facture</button>
+          </div>
+          {form.items.length>0&&(
+            <div style={{overflowX:"auto",marginBottom:10}}>
+              <table style={S.table}>
+                <thead><tr><th style={S.th}>Produit</th><th style={S.th}>Palier</th><th style={S.th}>Qté</th><th style={S.th}>Unités</th><th style={S.th}>Prix</th><th style={S.th}>Total</th><th style={S.th}>Profit</th><th style={S.th}>✕</th></tr></thead>
+                <tbody>{form.items.map((it,i)=>(
+                  <tr key={it.id}><td style={S.td}>{it.produitNom}</td><td style={S.td}>{it.palierLabel}</td><td style={S.td}>{it.quantite}</td><td style={S.td}>{it.totalUnites}</td><td style={S.td}>{fmt(it.prixUnitaire)} HTG</td><td style={{...S.td,fontWeight:700,color:C.commerce}}>{fmt(it.lineTotal)} HTG</td><td style={{...S.td,color:"#10b981"}}>{fmt(it.profit)} HTG</td><td style={S.td}><button style={{...S.bid,padding:"3px 7px"}} onClick={()=>setForm(f=>({...f,items:f.items.filter((_,j)=>j!==i)}))}>✕</button></td></tr>
+                ))}</tbody>
+              </table>
+            </div>
+          )}
+          <FG2>
+            <FField label="Remise (HTG)"><input style={S.inp} type="number" value={form.remise} onChange={e=>setForm(f=>({...f,remise:e.target.value}))}/></FField>
+          </FG2>
+          <div style={{background:"#f0fdf4",borderRadius:10,padding:"10px 14px",marginBottom:10}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+              {[["Sous-total",`${fmt(sub)} HTG`],["Total",`${fmt(total)} HTG`],["Profit Net",`${fmt(profitNet)} HTG`]].map(([l,v])=>(
+                <div key={l}><div style={{fontSize:11,color:C.textM}}>{l}</div><div style={{fontWeight:700,color:C.commerce}}>{v}</div></div>
+              ))}
+            </div>
+          </div>
+          <FField label="Notes"><textarea style={{...S.inp,height:50,resize:"vertical"}} value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/></FField>
+          <div style={S.mact}><button style={S.bs} onClick={()=>setShowF(false)}>Annuler</button><button style={{...S.bp,background:C.commerce}} onClick={save_}>💾 Enregistrer la Vente</button></div>
+        </div></div>
+      )}
+      {vente&&(
+        <div style={S.modal}><div style={{...S.mbox,maxWidth:520}}>
+          <h3 style={S.mtitle}>🧾 {vente.numero}</h3>
+          <div style={{fontSize:13,color:C.textM,marginBottom:10}}>{vente.date} · {vente.clientNom||"—"} · {vente.clientTel||""}</div>
+          <div style={{overflowX:"auto"}}><table style={S.table}>
+            <thead><tr><th style={S.th}>Produit</th><th style={S.th}>Qté</th><th style={S.th}>Prix</th><th style={S.th}>Total</th></tr></thead>
+            <tbody>{(vente.items||[]).map(it=><tr key={it.id}><td style={S.td}>{it.produitNom}</td><td style={S.td}>{it.quantite}</td><td style={S.td}>{fmt(it.prixUnitaire)} HTG</td><td style={{...S.td,fontWeight:700}}>{fmt(it.lineTotal)} HTG</td></tr>)}</tbody>
+          </table></div>
+          <div style={{marginTop:10,fontSize:13}}><b>Total :</b> {fmt(vente.total)} HTG · <b>Profit :</b> {fmt(vente.profitNet)} HTG · <SBadge s={vente.statutPaiement||"Payé"}/></div>
+          <div style={S.mact}><button style={S.bs} onClick={()=>setViewId(null)}>Fermer</button><button style={S.bp} onClick={()=>window.print()}>🖨️ Imprimer</button></div>
+        </div></div>
+      )}
+      <div style={{...S.card,overflowX:"auto"}}>
+        <table style={S.table}>
+          <thead><tr>{["N° Facture","Date","Client","Articles","Total","Profit","Statut","Actions"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {data.ventes.slice().reverse().map(v=>(
+              <tr key={v.id}><td style={S.td}><span style={{...S.badge,background:C.commerceL,color:"#065f46"}}>{v.numero}</span></td><td style={S.td}>{v.date}</td><td style={S.td}>{v.clientNom||"—"}</td><td style={S.td}>{(v.items||[]).length} articles</td><td style={{...S.td,fontWeight:700,color:C.commerce}}>{fmt(v.total)} HTG</td><td style={{...S.td,color:"#10b981"}}>{fmt(v.profitNet)} HTG</td><td style={S.td}><SBadge s={v.statutPaiement||"Payé"}/></td><td style={S.td}><button style={S.bie} onClick={()=>setViewId(v.id)}>👁️</button></td></tr>
+            ))}
+            {!data.ventes.length&&<EmptyRow cols={8}/>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════ ACHATS ══════════════════════════════ */
+function GAchats({data,mutate,showAlert,session}){
+  const[showF,setShowF]=useState(false);
+  const[form,setForm]=useState({numero:"",fournisseurNom:"",fournisseurTel:"",date:tod(),datelivraison:"",statutLivraison:"Commandé",statutPaiement:"Payé",items:[],notes:""});
+  const[itemForm,setItemForm]=useState({produitId:"",nbCaisses:1});
+
+  const addItem=()=>{
+    const p=data.produits.find(x=>x.id===itemForm.produitId);
+    if(!p){showAlert("Sélectionner un produit","error");return;}
+    const caisses=Number(itemForm.nbCaisses||1);
+    const totalUnites=caisses*Number(p.unitesParCaisse||1);
+    const coutCaisse=Number(p.prixAchatCaisse||0)+Number(p.fraisCaisse||0);
+    const totalCout=caisses*coutCaisse;
+    setForm(f=>({...f,items:[...f.items,{id:gid("ai"),produitId:p.id,produitNom:p.nom,caisses,totalUnites,coutCaisse,totalCout}]}));
+    setItemForm({produitId:"",nbCaisses:1});
+  };
+
+  const totalGeneral=form.items.reduce((s,i)=>s+i.totalCout,0);
+
+  const save_=()=>{
+    if(!form.items.length){showAlert("Ajouter au moins un produit","error");return;}
+    mutate(d=>{
+      const achat={...form,id:gid("ach"),numero:form.numero||`ACH-${Date.now()}`,totalGeneral,dateCreation:new Date().toISOString()};
+      d.achats=[...d.achats,achat];
+      if(form.statutLivraison==="Livré"){
+        form.items.forEach(it=>{
+          d.produits=d.produits.map(p=>p.id===it.produitId?{...p,stockUnites:Number(p.stockUnites||0)+it.totalUnites}:p);
+          d.stockMovements=[...d.stockMovements,{id:gid("mv"),date:form.date,produitId:it.produitId,produitNom:it.produitNom,type:"Entrée (Achat)",quantite:it.totalUnites,ref:achat.numero}];
+        });
+      }
+      return d;
+    });
+    showAlert("Achat enregistré","success");setShowF(false);
+    setForm({numero:"",fournisseurNom:"",fournisseurTel:"",date:tod(),datelivraison:"",statutLivraison:"Commandé",statutPaiement:"Payé",items:[],notes:""});
+  };
+
+  return(
+    <div>
+      <PageHeader title="🛒 Achats Fournisseurs" color={C.commerce} onAdd={()=>setShowF(true)} label="+ Nouvel Achat"/>
+      {showF&&(
+        <div style={S.modal}><div style={{...S.mbox,maxWidth:700}}>
+          <h3 style={S.mtitle}>🛒 Nouvel Achat Fournisseur</h3>
+          <FG2>
+            <FField label="N° Commande"><input style={S.inp} value={form.numero} onChange={e=>setForm(f=>({...f,numero:e.target.value}))}/></FField>
+            <FField label="Fournisseur"><input style={S.inp} value={form.fournisseurNom} onChange={e=>setForm(f=>({...f,fournisseurNom:e.target.value}))}/></FField>
+            <FField label="Téléphone Fournisseur"><input style={S.inp} value={form.fournisseurTel} onChange={e=>setForm(f=>({...f,fournisseurTel:e.target.value}))}/></FField>
+            <FField label="Date Commande"><input style={S.inp} type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}/></FField>
+            <FField label="Date Livraison Prévue"><input style={S.inp} type="date" value={form.datelivraison} onChange={e=>setForm(f=>({...f,datelivraison:e.target.value}))}/></FField>
+            <FField label="Statut Livraison"><select style={S.inp} value={form.statutLivraison} onChange={e=>setForm(f=>({...f,statutLivraison:e.target.value}))}><option>Commandé</option><option>En transit</option><option>Livré</option></select></FField>
+            <FField label="Statut Paiement"><select style={S.inp} value={form.statutPaiement} onChange={e=>setForm(f=>({...f,statutPaiement:e.target.value}))}><option>Payé</option><option>Partiel</option><option>Impayé</option></select></FField>
+          </FG2>
+          <SectionLabel c={C.commerce}>📦 Produits Commandés</SectionLabel>
+          <div style={{background:"#f8fafc",borderRadius:10,padding:12,marginBottom:10}}>
+            <div style={S.fg2}>
+              <FField label="Produit"><select style={S.inp} value={itemForm.produitId} onChange={e=>setItemForm(f=>({...f,produitId:e.target.value}))}><option value="">-- Sélectionner --</option>{data.produits.map(p=><option key={p.id} value={p.id}>{p.nom}</option>)}</select></FField>
+              <FField label="Nombre de Caisses"><input style={S.inp} type="number" min="1" value={itemForm.nbCaisses} onChange={e=>setItemForm(f=>({...f,nbCaisses:e.target.value}))}/></FField>
+            </div>
+            <button style={{...S.bCommerce,fontSize:12}} onClick={addItem}>+ Ajouter</button>
+          </div>
+          {form.items.length>0&&(
+            <div style={{overflowX:"auto",marginBottom:10}}>
+              <table style={S.table}>
+                <thead><tr><th style={S.th}>Produit</th><th style={S.th}>Caisses</th><th style={S.th}>Unités</th><th style={S.th}>Coût/Caisse</th><th style={S.th}>Total</th><th style={S.th}>✕</th></tr></thead>
+                <tbody>{form.items.map((it,i)=><tr key={it.id}><td style={S.td}>{it.produitNom}</td><td style={S.td}>{it.caisses}</td><td style={S.td}>{it.totalUnites}</td><td style={S.td}>{fmt(it.coutCaisse)} HTG</td><td style={{...S.td,fontWeight:700,color:C.danger}}>{fmt(it.totalCout)} HTG</td><td style={S.td}><button style={{...S.bid,padding:"3px 7px"}} onClick={()=>setForm(f=>({...f,items:f.items.filter((_,j)=>j!==i)}))}>✕</button></td></tr>)}</tbody>
+              </table>
+            </div>
+          )}
+          <div style={{background:"#fef2f2",borderRadius:8,padding:"10px 14px",marginBottom:10,fontWeight:700,color:C.danger}}>Total Général : {fmt(totalGeneral)} HTG</div>
+          <InfoBox c="#fef3c7">Si statut "Livré" : le stock sera mis à jour automatiquement.</InfoBox>
+          <FField label="Notes"><textarea style={{...S.inp,height:50,resize:"vertical"}} value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/></FField>
+          <div style={S.mact}><button style={S.bs} onClick={()=>setShowF(false)}>Annuler</button><button style={{...S.bp,background:C.commerce}} onClick={save_}>💾 Enregistrer</button></div>
+        </div></div>
+      )}
+      <div style={{...S.card,overflowX:"auto"}}>
+        <table style={S.table}>
+          <thead><tr>{["N°","Date","Fournisseur","Articles","Total","Livraison","Paiement"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {data.achats.slice().reverse().map(a=>(
+              <tr key={a.id}><td style={S.td}><span style={{...S.badge,background:"#fef3c7",color:"#92400e"}}>{a.numero}</span></td><td style={S.td}>{a.date}</td><td style={S.td}>{a.fournisseurNom||"—"}</td><td style={S.td}>{(a.items||[]).length} produits</td><td style={{...S.td,fontWeight:700,color:C.danger}}>{fmt(a.totalGeneral)} HTG</td><td style={S.td}><SBadge s={a.statutLivraison||"Commandé"}/></td><td style={S.td}><SBadge s={a.statutPaiement||"Payé"}/></td></tr>
+            ))}
+            {!data.achats.length&&<EmptyRow cols={7}/>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════ CLIENTS ══════════════════════════════ */
+function GClients({data,mutate,showAlert,session}){
+  const[showF,setShowF]=useState(false);const[editing,setEditing]=useState(null);const[search,setSearch]=useState("");
+  const em=()=>({nom:"",telephone:"",whatsapp:"",adresse:"",type:"Détaillant",balanceDue:0,notes:""});
+  const[form,setForm]=useState(em());const F=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const save_=()=>{if(!form.nom){showAlert("Nom requis","error");return;}mutate(d=>{if(editing)d.clients=d.clients.map(c=>c.id===editing?{...form,id:editing}:c);else d.clients=[...d.clients,{...form,id:gid("cli"),dateCreation:tod(),totalAchats:0}];showAlert(editing?"Modifié":"Ajouté","success");return d;});setShowF(false);setEditing(null);setForm(em());};
+  const filtered=data.clients.filter(c=>`${c.nom}${c.telephone}`.toLowerCase().includes(search.toLowerCase()));
+  return(
+    <div>
+      <PageHeader title="👥 Clients" color={C.commerce} onAdd={()=>{setForm(em());setEditing(null);setShowF(true);}} label="+ Client"/>
+      <input style={{...S.inp,maxWidth:280,marginBottom:12}} placeholder="🔍 Rechercher..." value={search} onChange={e=>setSearch(e.target.value)}/>
+      {showF&&<Modal title={editing?"✏️ Modifier Client":"➕ Nouveau Client"} onClose={()=>setShowF(false)} onSave={save_}>
+        <FG2>
+          <FField label="Nom *"><input style={S.inp} value={form.nom} onChange={e=>F("nom",e.target.value)}/></FField>
+          <FField label="Téléphone"><input style={S.inp} value={form.telephone||""} onChange={e=>F("telephone",e.target.value)}/></FField>
+          <FField label="WhatsApp"><input style={S.inp} value={form.whatsapp||""} onChange={e=>F("whatsapp",e.target.value)}/></FField>
+          <FField label="Adresse"><input style={S.inp} value={form.adresse||""} onChange={e=>F("adresse",e.target.value)}/></FField>
+          <FField label="Type"><select style={S.inp} value={form.type} onChange={e=>F("type",e.target.value)}><option>Détaillant</option><option>Grossiste</option><option>Particulier</option><option>Revendeur</option></select></FField>
+          <FField label="Balance Due (HTG)"><input style={S.inp} type="number" value={form.balanceDue||0} onChange={e=>F("balanceDue",e.target.value)}/></FField>
+        </FG2>
+        <FField label="Notes"><textarea style={{...S.inp,height:50,resize:"vertical"}} value={form.notes||""} onChange={e=>F("notes",e.target.value)}/></FField>
+      </Modal>}
+      <div style={{...S.card,overflowX:"auto"}}>
+        <table style={S.table}>
+          <thead><tr>{["Nom","Téléphone","Adresse","Type","Balance Due","Actions"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {filtered.map(c=>(
+              <tr key={c.id}><td style={S.td}><b>{c.nom}</b></td><td style={S.td}>{c.telephone||"—"}</td><td style={S.td}>{c.adresse||"—"}</td><td style={S.td}><span style={{...S.badge,background:C.commerceL,color:"#065f46"}}>{c.type}</span></td><td style={S.td}><span style={{color:Number(c.balanceDue||0)>0?C.danger:"#22c55e",fontWeight:700}}>{fmt(c.balanceDue||0)} HTG</span></td><td style={S.td}><RowActions onEdit={()=>{setForm(c);setEditing(c.id);setShowF(true);}} onDel={session.role==="superadmin"?()=>{if(confirm("Supprimer?"))mutate(d=>{d.clients=d.clients.filter(x=>x.id!==c.id);return d;});}:null}/></td></tr>
+            ))}
+            {!filtered.length&&<EmptyRow cols={6}/>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════ FOURNISSEURS ══════════════════════════════ */
+function GFournisseurs({data,mutate,showAlert,session}){
+  const[showF,setShowF]=useState(false);const[editing,setEditing]=useState(null);const[search,setSearch]=useState("");
+  const em=()=>({nom:"",telephone:"",whatsapp:"",adresse:"",specialite:"",notes:""});
+  const[form,setForm]=useState(em());const F=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const save_=()=>{if(!form.nom){showAlert("Nom requis","error");return;}mutate(d=>{if(editing)d.fournisseurs=d.fournisseurs.map(f=>f.id===editing?{...form,id:editing}:f);else d.fournisseurs=[...d.fournisseurs,{...form,id:gid("sup"),dateCreation:tod(),totalCommandes:0}];showAlert(editing?"Modifié":"Ajouté","success");return d;});setShowF(false);setEditing(null);setForm(em());};
+  const filtered=data.fournisseurs.filter(f=>`${f.nom}${f.specialite}`.toLowerCase().includes(search.toLowerCase()));
+  return(
+    <div>
+      <PageHeader title="🏭 Fournisseurs" color={C.commerce} onAdd={()=>{setForm(em());setEditing(null);setShowF(true);}} label="+ Fournisseur"/>
+      <input style={{...S.inp,maxWidth:280,marginBottom:12}} placeholder="🔍 Rechercher..." value={search} onChange={e=>setSearch(e.target.value)}/>
+      {showF&&<Modal title={editing?"✏️ Modifier":"➕ Nouveau Fournisseur"} onClose={()=>setShowF(false)} onSave={save_}>
+        <FG2>
+          <FField label="Nom *"><input style={S.inp} value={form.nom} onChange={e=>F("nom",e.target.value)}/></FField>
+          <FField label="Téléphone"><input style={S.inp} value={form.telephone||""} onChange={e=>F("telephone",e.target.value)}/></FField>
+          <FField label="WhatsApp"><input style={S.inp} value={form.whatsapp||""} onChange={e=>F("whatsapp",e.target.value)}/></FField>
+          <FField label="Adresse"><input style={S.inp} value={form.adresse||""} onChange={e=>F("adresse",e.target.value)}/></FField>
+          <FField label="Spécialité"><input style={S.inp} value={form.specialite||""} onChange={e=>F("specialite",e.target.value)}/></FField>
+        </FG2>
+        <FField label="Notes"><textarea style={{...S.inp,height:50,resize:"vertical"}} value={form.notes||""} onChange={e=>F("notes",e.target.value)}/></FField>
+      </Modal>}
+      <div style={{...S.card,overflowX:"auto"}}>
+        <table style={S.table}>
+          <thead><tr>{["Nom","Téléphone","Adresse","Spécialité","Commandes","Actions"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {filtered.map(f=>{const total=data.achats.filter(a=>a.fournisseurNom===f.nom).length;return(
+              <tr key={f.id}><td style={S.td}><b>{f.nom}</b></td><td style={S.td}>{f.telephone||"—"}</td><td style={S.td}>{f.adresse||"—"}</td><td style={S.td}>{f.specialite||"—"}</td><td style={S.td}>{total}</td><td style={S.td}><RowActions onEdit={()=>{setForm(f);setEditing(f.id);setShowF(true);}} onDel={session.role==="superadmin"?()=>{if(confirm("Supprimer?"))mutate(d=>{d.fournisseurs=d.fournisseurs.filter(x=>x.id!==f.id);return d;});}:null}/></td></tr>
+            );})}
+            {!filtered.length&&<EmptyRow cols={6}/>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════ STOCK ══════════════════════════════ */
+function GStock({data}){
+  const total=data.produits.reduce((s,p)=>s+Number(p.stockUnites||0)*Number(p.coutUnite||0),0);
+  return(
+    <div>
+      <h2 style={{fontSize:18,fontWeight:800,color:C.commerce,marginBottom:14}}>📊 Suivi du Stock</h2>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",gap:12,marginBottom:14}}>
+        {[{l:"Total Produits",v:data.produits.length,c:C.commerce},{l:"Valeur du Stock",v:`${fmt(total)} HTG`,c:C.primary},{l:"Alertes Stock",v:data.produits.filter(p=>Number(p.stockUnites||0)<=Number(p.minStockAlert||0)).length,c:C.danger},{l:"Mouvements",v:data.stockMovements.length,c:C.taxi}].map((c,i)=>(
+          <div key={i} style={{...S.card,borderLeft:`4px solid ${c.c}`}}><div style={{fontSize:11,color:C.textM}}>{c.l}</div><div style={{fontSize:20,fontWeight:800}}>{c.v}</div></div>
+        ))}
+      </div>
+      <div style={{...S.card,overflowX:"auto",marginBottom:14}}>
+        <div style={{fontWeight:700,marginBottom:10}}>📦 État des Stocks</div>
+        <table style={S.table}>
+          <thead><tr>{["Produit","Catégorie","Stock","Min Alert","Valeur Stock","État"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {data.produits.map(p=>{const bas=Number(p.stockUnites||0)<=Number(p.minStockAlert||0);return(
+              <tr key={p.id}><td style={S.td}><b>{p.nom}</b></td><td style={S.td}>{p.categorie}</td><td style={{...S.td,fontWeight:700,color:bas?C.danger:"#22c55e"}}>{p.stockUnites||0} un.</td><td style={S.td}>{p.minStockAlert||0} un.</td><td style={S.td}>{fmt((p.stockUnites||0)*Number(p.coutUnite||0))} HTG</td><td style={S.td}><span style={{...S.badge,background:bas?"#fef2f2":C.commerceL,color:bas?C.danger:"#065f46"}}>{bas?"⚠️ Stock Bas":"✅ OK"}</span></td></tr>
+            );})}
+            {!data.produits.length&&<EmptyRow cols={6}/>}
+          </tbody>
+        </table>
+      </div>
+      <div style={{...S.card,overflowX:"auto"}}>
+        <div style={{fontWeight:700,marginBottom:10}}>🔄 Mouvements de Stock</div>
+        <table style={S.table}>
+          <thead><tr>{["Date","Produit","Type","Quantité","Référence"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {data.stockMovements.slice().reverse().map(m=>(
+              <tr key={m.id}><td style={S.td}>{m.date}</td><td style={S.td}>{m.produitNom}</td><td style={S.td}><span style={{...S.badge,background:m.type.includes("Entrée")?"#dcfce7":"#fef2f2",color:m.type.includes("Entrée")?"#166534":C.danger}}>{m.type}</span></td><td style={{...S.td,fontWeight:700,color:m.quantite>0?"#22c55e":C.danger}}>{m.quantite>0?"+":""}{m.quantite}</td><td style={S.td}>{m.ref||"—"}</td></tr>
+            ))}
+            {!data.stockMovements.length&&<EmptyRow cols={5}/>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════ CAISSE ══════════════════════════════ */
+function Caisse({data}){
+  const totalEncTaxi=data.transactions.reduce((s,t)=>s+Number(t.montantPaye||0),0);
+  const totalDepTaxi=data.depenses.reduce((s,d)=>s+Number(d.montant||0),0);
+  const totalPertes=data.pertes.reduce((s,p)=>s+Number(p.coutEstime||0),0);
+  const totalVentes=data.ventes.reduce((s,v)=>s+Number(v.total||0),0);
+  const profitCommerce=data.ventes.reduce((s,v)=>s+Number(v.profitNet||0),0);
+  const totalAchats=data.achats.reduce((s,a)=>s+Number(a.totalGeneral||0),0);
+  const beneficeTaxi=totalEncTaxi-totalDepTaxi-totalPertes;
+  const beneficeTotal=beneficeTaxi+profitCommerce;
+  const today=tod();
+  const cards=[
+    {l:"Encaissé Taxi",v:totalEncTaxi,c:C.taxi},{l:"Dépenses Taxi",v:totalDepTaxi,c:C.danger},
+    {l:"Pertes Taxi",v:totalPertes,c:C.danger},{l:"Bénéfice Taxi",v:beneficeTaxi,c:beneficeTaxi>=0?"#10b981":C.danger},
+    {l:"Chiffre d'Affaires Commerce",v:totalVentes,c:C.commerce},{l:"Coût Achats Commerce",v:totalAchats,c:C.danger},
+    {l:"Profit Commerce",v:profitCommerce,c:profitCommerce>=0?"#10b981":C.danger},
+    {l:"BÉNÉFICE TOTAL NET",v:beneficeTotal,c:beneficeTotal>=0?"#10b981":C.danger},
+  ];
+  const parMoisTaxi={};data.transactions.forEach(t=>{const m=t.date?.slice(0,7);if(m)parMoisTaxi[m]=(parMoisTaxi[m]||0)+Number(t.montantPaye||0);});
+  const parMoisVentes={};data.ventes.forEach(v=>{const m=v.date?.slice(0,7);if(m)parMoisVentes[m]=(parMoisVentes[m]||0)+Number(v.total||0);});
+  const mois=[...new Set([...Object.keys(parMoisTaxi),...Object.keys(parMoisVentes)])].sort().slice(-6);
+  return(
+    <div>
+      <h2 style={{fontSize:18,fontWeight:800,color:C.text,marginBottom:14}}>🏦 Caisse & Flux Financier</h2>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",gap:12,marginBottom:14}}>
+        {cards.map((c,i)=>(
+          <div key={i} style={{...S.card,borderLeft:`4px solid ${c.c}`}}><div style={{fontSize:11,color:C.textM}}>{c.l}</div><div style={{fontSize:18,fontWeight:800,color:c.c}}>{fmt(c.v)} HTG</div></div>
+        ))}
+      </div>
+      {mois.length>0&&(
+        <div style={{...S.card,overflowX:"auto"}}>
+          <div style={{fontWeight:700,marginBottom:10}}>📊 Flux Mensuel</div>
+          <table style={S.table}>
+            <thead><tr><th style={S.th}>Mois</th><th style={S.th}>Taxi Encaissé</th><th style={S.th}>Ventes Commerce</th><th style={S.th}>Total Entrées</th></tr></thead>
+            <tbody>{mois.map(m=>{const t=parMoisTaxi[m]||0,v=parMoisVentes[m]||0;return(
+              <tr key={m}><td style={S.td}><b>{m}</b></td><td style={{...S.td,color:C.taxi,fontWeight:700}}>{fmt(t)} HTG</td><td style={{...S.td,color:C.commerce,fontWeight:700}}>{fmt(v)} HTG</td><td style={{...S.td,fontWeight:700}}>{fmt(t+v)} HTG</td></tr>
+            );})}</tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════ RAPPORTS ══════════════════════════════ */
+function Rapports({data}){
+  const totalEncTaxi=data.transactions.reduce((s,t)=>s+Number(t.montantPaye||0),0);
+  const totalDepTaxi=data.depenses.reduce((s,d)=>s+Number(d.montant||0),0);
+  const totalPertes=data.pertes.reduce((s,p)=>s+Number(p.coutEstime||0),0);
+  const totalVentes=data.ventes.reduce((s,v)=>s+Number(v.total||0),0);
+  const profitCommerce=data.ventes.reduce((s,v)=>s+Number(v.profitNet||0),0);
+  const depParCat={};data.depenses.forEach(d=>{depParCat[d.categorie]=(depParCat[d.categorie]||0)+Number(d.montant||0);});
+  const ventesParClient={};data.ventes.forEach(v=>{const n=v.clientNom||"Anonyme";ventesParClient[n]=(ventesParClient[n]||0)+Number(v.total||0);});
+  return(
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <h2 style={{fontSize:18,fontWeight:800,color:C.text}}>📈 Rapports & Analyses</h2>
+        <button style={S.bp} onClick={()=>window.print()}>🖨️ Imprimer</button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:12,marginBottom:14}}>
+        {[{l:"Motos",v:data.motos.length,c:C.taxi},{l:"Chauffeurs",v:data.chauffeurs.length,c:C.taxi},{l:"Contrats Actifs",v:data.contrats.filter(c=>c.statut==="actif").length,c:C.taxi},{l:"Produits",v:data.produits.length,c:C.commerce},{l:"Clients",v:data.clients.length,c:C.commerce},{l:"Ventes",v:data.ventes.length,c:C.commerce}].map((c,i)=>(
+          <div key={i} style={S.card}><div style={{fontSize:11,color:C.textM}}>{c.l}</div><div style={{fontSize:22,fontWeight:800,color:c.c}}>{c.v}</div></div>
+        ))}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <div style={S.card}>
+          <div style={{fontWeight:700,marginBottom:10}}>🏍️ Résumé Taxi</div>
+          {[["Encaissé Total",totalEncTaxi,C.taxi],["Dépenses",totalDepTaxi,C.danger],["Pertes",totalPertes,C.danger],["Bénéfice Taxi",totalEncTaxi-totalDepTaxi-totalPertes,totalEncTaxi-totalDepTaxi-totalPertes>=0?"#10b981":C.danger]].map(([l,v,c])=>(
+            <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid #f1f5f9`}}><span style={{fontSize:13,color:C.textM}}>{l}</span><span style={{fontWeight:700,color:c}}>{fmt(v)} HTG</span></div>
+          ))}
+        </div>
+        <div style={S.card}>
+          <div style={{fontWeight:700,marginBottom:10}}>🛒 Résumé Commerce</div>
+          {[["Chiffre d'Affaires",totalVentes,C.commerce],["Profit Net",profitCommerce,"#10b981"],["Achats Fournisseurs",data.achats.reduce((s,a)=>s+Number(a.totalGeneral||0),0),C.danger]].map(([l,v,c])=>(
+            <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid #f1f5f9`}}><span style={{fontSize:13,color:C.textM}}>{l}</span><span style={{fontWeight:700,color:c}}>{fmt(v)} HTG</span></div>
+          ))}
+        </div>
+        <div style={S.card}>
+          <div style={{fontWeight:700,marginBottom:10}}>💸 Dépenses par Catégorie</div>
+          {Object.entries(depParCat).map(([cat,v])=>(
+            <div key={cat} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid #f1f5f9`}}><span style={{fontSize:13,color:C.textM}}>{cat}</span><span style={{fontWeight:700,color:C.danger}}>{fmt(v)} HTG</span></div>
+          ))}
+          {!Object.keys(depParCat).length&&<p style={{color:C.textL,fontSize:13}}>Aucune dépense</p>}
+        </div>
+        <div style={S.card}>
+          <div style={{fontWeight:700,marginBottom:10}}>👥 Top Clients</div>
+          {Object.entries(ventesParClient).sort(([,a],[,b])=>b-a).slice(0,5).map(([nom,v])=>(
+            <div key={nom} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid #f1f5f9`}}><span style={{fontSize:13,color:C.textM}}>{nom}</span><span style={{fontWeight:700,color:C.commerce}}>{fmt(v)} HTG</span></div>
+          ))}
+          {!Object.keys(ventesParClient).length&&<p style={{color:C.textL,fontSize:13}}>Aucune vente</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════ UTILISATEURS ══════════════════════════════ */
+function GUsers({data,mutate,showAlert}){
+  const[showF,setShowF]=useState(false);
+  const em=()=>({nom:"",username:"",password:"",role:"agent",actif:true});
+  const[form,setForm]=useState(em());const F=(k,v)=>setForm(f=>({...f,[k]:v}));
+  return(
+    <div>
+      <PageHeader title="🔐 Utilisateurs" color={C.primary} onAdd={()=>{setForm(em());setShowF(true);}} label="+ Utilisateur"/>
+      {showF&&<Modal title="➕ Nouvel Utilisateur" onClose={()=>setShowF(false)} onSave={()=>{if(!form.nom||!form.username||!form.password){showAlert("Tous les champs requis","error");return;}mutate(d=>{d.users=[...d.users,{...form,id:gid("u")}];return d;});showAlert("Ajouté","success");setShowF(false);}}>
+        <FG2>
+          <FField label="Nom"><input style={S.inp} value={form.nom} onChange={e=>F("nom",e.target.value)}/></FField>
+          <FField label="Username"><input style={S.inp} value={form.username} onChange={e=>F("username",e.target.value)}/></FField>
+          <FField label="Mot de passe"><input style={S.inp} type="password" value={form.password} onChange={e=>F("password",e.target.value)}/></FField>
+          <FField label="Rôle"><select style={S.inp} value={form.role} onChange={e=>F("role",e.target.value)}><option value="agent">Agent</option><option value="superadmin">Super Admin</option></select></FField>
+        </FG2>
+      </Modal>}
+      <div style={S.card}>
+        {data.users.map(u=>(
+          <div key={u.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",borderRadius:10,background:"#f8fafc",marginBottom:8}}>
+            <div><div style={{fontWeight:700,fontSize:13}}>{u.nom}</div><div style={{fontSize:11,color:C.textM}}>@{u.username} · <span style={{color:u.role==="superadmin"?C.taxi:C.primary}}>{u.role==="superadmin"?"Super Admin":"Agent"}</span> · <span style={{color:u.actif?"#22c55e":C.danger}}>{u.actif?"Actif":"Inactif"}</span></div></div>
+            <button style={{...S.bie,background:u.actif?"#fef2f2":"#f0fdf4"}} onClick={()=>mutate(d=>{d.users=d.users.map(x=>x.id===u.id?{...x,actif:!x.actif}:x);return d;})}>{u.actif?"🔒":"🔓"}</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════ EXTENSIONS (MODULE SYSTEM) ══════════════════════════════ */
+function GExtensions({data,mutate,showAlert}){
+  const[showF,setShowF]=useState(false);
+  const em=()=>({nom:"",icon:"🧩",description:"",champs:[]});
+  const[form,setForm]=useState(em());const F=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const[champForm,setChampForm]=useState({label:"",type:"text"});
+
+  const addChamp=()=>{if(!champForm.label)return;setForm(f=>({...f,champs:[...f.champs,{id:gid("cf"),label:champForm.label,type:champForm.type}]}));setChampForm({label:"",type:"text"});};
+
+  return(
+    <div>
+      <PageHeader title="🧩 Extensions / Modules Personnalisés" color={C.primary} onAdd={()=>{setForm(em());setShowF(true);}} label="+ Nouveau Module"/>
+      <InfoBox c="#eef2ff">Ajoutez vos propres modules sans toucher au code. Chaque module crée un nouveau menu avec ses propres champs d'enregistrement.</InfoBox>
+      <Sp h={12}/>
+      {showF&&<Modal title="🧩 Nouveau Module" onClose={()=>setShowF(false)} onSave={()=>{if(!form.nom){showAlert("Nom requis","error");return;}mutate(d=>{d.modules=[...d.modules,{...form,id:gid("mod"),dateCreation:tod(),enregistrements:[]}];return d;});showAlert("Module créé!","success");setShowF(false);}}>
+        <FG2>
+          <FField label="Nom du Module *"><input style={S.inp} value={form.nom} onChange={e=>F("nom",e.target.value)}/></FField>
+          <FField label="Icône (emoji)"><input style={S.inp} value={form.icon} onChange={e=>F("icon",e.target.value)}/></FField>
+        </FG2>
+        <FField label="Description"><input style={S.inp} value={form.description||""} onChange={e=>F("description",e.target.value)}/></FField>
+        <Sp h={12}/>
+        <SectionLabel c={C.primary}>📋 Champs du Module</SectionLabel>
+        <div style={{background:"#f8fafc",borderRadius:10,padding:12,marginBottom:10}}>
+          <div style={S.fg2}>
+            <FField label="Nom du Champ"><input style={S.inp} value={champForm.label} onChange={e=>setChampForm(f=>({...f,label:e.target.value}))}/></FField>
+            <FField label="Type"><select style={S.inp} value={champForm.type} onChange={e=>setChampForm(f=>({...f,type:e.target.value}))}><option value="text">Texte</option><option value="number">Nombre</option><option value="date">Date</option><option value="select">Liste choix</option></select></FField>
+          </div>
+          <button style={{...S.bp,fontSize:12,background:C.primary}} onClick={addChamp}>+ Ajouter Champ</button>
+        </div>
+        {form.champs.length>0&&(
+          <div>{form.champs.map((c,i)=>(
+            <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 10px",background:"#f0f9ff",borderRadius:8,marginBottom:6}}>
+              <span style={{fontSize:13}}><b>{c.label}</b> <span style={{color:C.textL}}>({c.type})</span></span>
+              <button style={{...S.bid,padding:"3px 8px",fontSize:12}} onClick={()=>setForm(f=>({...f,champs:f.champs.filter((_,j)=>j!==i)}))}>✕</button>
+            </div>
+          ))}</div>
+        )}
+      </Modal>}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:12}}>
+        {(data.modules||[]).map(m=>(
+          <div key={m.id} style={{...S.card,borderTop:`4px solid ${C.primary}`}}>
+            <div style={{fontSize:28,marginBottom:6}}>{m.icon}</div>
+            <div style={{fontWeight:800,fontSize:15,color:C.text}}>{m.nom}</div>
+            <div style={{fontSize:12,color:C.textM,marginBottom:8}}>{m.description}</div>
+            <div style={{fontSize:12,color:C.textL}}>{(m.champs||[]).length} champs · {(m.enregistrements||[]).length} enregistrements</div>
+            <div style={{marginTop:10,display:"flex",gap:8}}>
+              <button style={{...S.bs,fontSize:12,padding:"6px 12px"}} onClick={()=>mutate(d=>{d.modules=d.modules.filter(x=>x.id!==m.id);return d;})}>🗑️ Supprimer</button>
+            </div>
+          </div>
+        ))}
+        {!(data.modules||[]).length&&<div style={{...S.card,textAlign:"center",color:C.textL,gridColumn:"1/-1",padding:40}}>🧩 Aucun module créé. Cliquez sur "+ Nouveau Module" pour commencer.</div>}
+      </div>
+    </div>
+  );
+}
+
+function ExtensionView({module:m}){
+  const[data2,setData2]=useState(()=>({items:(m.enregistrements||[])}));
+  // Extension modules: lecture seule dans cette vue simplifiée
+  return(
+    <div>
+      <h2 style={{fontSize:18,fontWeight:800,margin:"0 0 14px"}}>{m.icon} {m.nom}</h2>
+      <InfoBox c="#eef2ff">Module personnalisé — {(m.champs||[]).length} champs configurés · {(m.enregistrements||[]).length} enregistrements</InfoBox>
+      <Sp h={10}/>
+      <div style={S.card}><p style={{color:C.textL,fontSize:13}}>Les données de ce module sont enregistrées dans le système RTB-M. Gérez ce module via ⚙️ Extensions.</p></div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════ PARAMÈTRES ══════════════════════════════ */
+function Parametres({session,data,mutate,showAlert,onClose,setSession}){
+  const[tab,setTab]=useState("profil");
+  const[nom,setNom]=useState(session.nom);const[username,setUsername]=useState(session.username);
+  const[oldPwd,setOldPwd]=useState("");const[newPwd,setNewPwd]=useState("");const[confPwd,setConfPwd]=useState("");
+  const[editUser,setEditUser]=useState(null);const[euNom,setEuNom]=useState("");const[euUser,setEuUser]=useState("");const[euPwd,setEuPwd]=useState("");const[euRole,setEuRole]=useState("agent");
+  const tb2=(t)=>({padding:"9px 14px",border:"none",cursor:"pointer",fontWeight:700,fontSize:13,borderBottom:tab===t?`2px solid ${C.primary}`:"2px solid transparent",color:tab===t?C.primary:C.textM,background:"transparent"});
+  const saveProfil=()=>{if(!nom||!username){showAlert("Requis","error");return;}mutate(d=>{d.users=d.users.map(u=>u.id===session.id?{...u,nom,username}:u);return d;});setSession(s=>({...s,nom,username}));showAlert("Profil mis à jour","success");};
+  const savePwd=()=>{const usr=data.users.find(u=>u.id===session.id);if(usr.password!==oldPwd){showAlert("Ancien mot de passe incorrect","error");return;}if(newPwd.length<6){showAlert("Min 6 caractères","error");return;}if(newPwd!==confPwd){showAlert("Ne correspondent pas","error");return;}mutate(d=>{d.users=d.users.map(u=>u.id===session.id?{...u,password:newPwd}:u);return d;});setOldPwd("");setNewPwd("");setConfPwd("");showAlert("Mot de passe modifié","success");};
+  return(
+    <div style={S.modal}><div style={{...S.mbox,maxWidth:480}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <h3 style={{...S.mtitle,margin:0}}>⚙️ Paramètres</h3>
+        <button style={{background:"transparent",border:"none",fontSize:20,cursor:"pointer",color:C.textM}} onClick={onClose}>✕</button>
+      </div>
+      <div style={{display:"flex",borderBottom:`1px solid ${C.border}`,marginBottom:16}}>
+        <button style={tb2("profil")} onClick={()=>setTab("profil")}>👤 Profil</button>
+        <button style={tb2("pwd")} onClick={()=>setTab("pwd")}>🔑 Mot de passe</button>
+        {session.role==="superadmin"&&<button style={tb2("users")} onClick={()=>setTab("users")}>👥 Utilisateurs</button>}
+      </div>
+      {tab==="profil"&&(<div>
+        <div style={S.fg1}><label style={S.lbl}>Nom complet</label><input style={S.inp} value={nom} onChange={e=>setNom(e.target.value)}/></div>
+        <div style={S.fg1}><label style={S.lbl}>Nom d'utilisateur</label><input style={S.inp} value={username} onChange={e=>setUsername(e.target.value)}/></div>
+        <InfoBox c="#f8fafc">Rôle : <b style={{color:C.primary}}>{session.role==="superadmin"?"Super Admin":"Agent"}</b></InfoBox>
+        <Sp h={12}/><button style={S.bp} onClick={saveProfil}>💾 Enregistrer</button>
+      </div>)}
+      {tab==="pwd"&&(<div>
+        <div style={S.fg1}><label style={S.lbl}>Ancien mot de passe</label><input style={S.inp} type="password" value={oldPwd} onChange={e=>setOldPwd(e.target.value)}/></div>
+        <div style={S.fg1}><label style={S.lbl}>Nouveau mot de passe</label><input style={S.inp} type="password" value={newPwd} onChange={e=>setNewPwd(e.target.value)}/></div>
+        <div style={S.fg1}><label style={S.lbl}>Confirmer</label><input style={S.inp} type="password" value={confPwd} onChange={e=>setConfPwd(e.target.value)}/></div>
+        {newPwd&&confPwd&&newPwd!==confPwd&&<p style={{color:C.danger,fontSize:12,marginBottom:8}}>⚠ Ne correspondent pas</p>}
+        <button style={S.bp} onClick={savePwd}>🔑 Changer</button>
+      </div>)}
+      {tab==="users"&&session.role==="superadmin"&&(<div>
+        {editUser?(
+          <div>
+            <div style={{fontWeight:700,color:C.primary,marginBottom:10,fontSize:13}}>✏️ {editUser.nom}</div>
+            <FG2>
+              <FField label="Nom"><input style={S.inp} value={euNom} onChange={e=>setEuNom(e.target.value)}/></FField>
+              <FField label="Username"><input style={S.inp} value={euUser} onChange={e=>setEuUser(e.target.value)}/></FField>
+              <FField label="Nouveau mot de passe (optionnel)"><input style={S.inp} type="password" value={euPwd} onChange={e=>setEuPwd(e.target.value)}/></FField>
+              <FField label="Rôle"><select style={S.inp} value={euRole} onChange={e=>setEuRole(e.target.value)}><option value="agent">Agent</option><option value="superadmin">Super Admin</option></select></FField>
+            </FG2>
+            <div style={{display:"flex",gap:10}}><button style={S.bs} onClick={()=>setEditUser(null)}>Annuler</button><button style={S.bp} onClick={()=>{mutate(d=>{d.users=d.users.map(u=>u.id===editUser.id?{...u,nom:euNom,username:euUser,role:euRole,...(euPwd?{password:euPwd}:{})}:u);return d;});showAlert("Modifié","success");setEditUser(null);}}>💾 Enregistrer</button></div>
+          </div>
+        ):(
+          <div>{data.users.map(u=>(
+            <div key={u.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 11px",borderRadius:9,background:"#f8fafc",marginBottom:7}}>
+              <div><div style={{fontWeight:700,fontSize:13}}>{u.nom}</div><div style={{fontSize:11,color:C.textM}}>@{u.username} · {u.role==="superadmin"?"Super Admin":"Agent"} · <span style={{color:u.actif?"#22c55e":C.danger}}>{u.actif?"Actif":"Inactif"}</span></div></div>
+              <div style={{display:"flex",gap:5}}>
+                <button style={S.bie} onClick={()=>{setEditUser(u);setEuNom(u.nom);setEuUser(u.username);setEuPwd("");setEuRole(u.role);}}>✏️</button>
+                <button style={{...S.bie,background:u.actif?"#fef2f2":"#f0fdf4"}} onClick={()=>mutate(d=>{d.users=d.users.map(x=>x.id===u.id?{...x,actif:!x.actif}:x);return d;})}>{u.actif?"🔒":"🔓"}</button>
+              </div>
+            </div>
+          ))}</div>
+        )}
+      </div>)}
+      <div style={S.mact}><button style={S.bs} onClick={onClose}>Fermer</button></div>
+    </div></div>
+  );
+}
+
+/* ══════════════════════════════ SHARED UI ══════════════════════════════ */
+function PageHeader({title,color,onAdd,label}){
+  return(
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
+      <h2 style={{fontSize:18,fontWeight:800,color:color||C.text,margin:0}}>{title}</h2>
+      {onAdd&&<button style={{...S.bp,background:color||C.primary}} onClick={onAdd}>{label||"+ Ajouter"}</button>}
+    </div>
+  );
+}
+function StatCard({label,val,color}){
+  return(
+    <div style={{...S.card,borderLeft:`4px solid ${color}`,marginBottom:12}}>
+      <div style={{fontSize:12,color:C.textM}}>{label}</div>
+      <div style={{fontSize:22,fontWeight:800,color}}>{val}</div>
+    </div>
+  );
+}
+function Modal({title,children,onClose,onSave}){
+  return(
+    <div style={S.modal}><div style={S.mbox}>
+      <h3 style={S.mtitle}>{title}</h3>
+      {children}
+      <div style={S.mact}><button style={S.bs} onClick={onClose}>Annuler</button><button style={S.bp} onClick={onSave}>💾 Enregistrer</button></div>
+    </div></div>
+  );
+}
+function FG2({children}){return <div style={S.fg2}>{children}</div>;}
+function FField({label,children}){return <div><label style={S.lbl}>{label}</label>{children}</div>;}
+function SectionLabel({c,children}){return <div style={{fontWeight:700,color:c||C.primary,fontSize:12,margin:"12px 0 8px",paddingBottom:4,borderBottom:`1px solid ${C.border}`}}>{children}</div>;}
+function InfoBox({c,children}){return <div style={{background:c||"#f0f9ff",borderRadius:8,padding:"9px 12px",fontSize:13,marginBottom:8}}>{children}</div>;}
+function EmptyRow({cols}){return <tr><td colSpan={cols} style={{...S.td,textAlign:"center",color:C.textL,padding:24}}>Aucun enregistrement</td></tr>;}
+function RowActions({onEdit,onDel}){return <div style={{display:"flex",gap:5}}><button style={S.bie} onClick={onEdit}>✏️</button>{onDel&&<button style={S.bid} onClick={onDel}>🗑️</button>}</div>;}
+
+ReactDOM.render(<App/>, document.getElementById("root"));
+</script>
+</body>
+</html>
