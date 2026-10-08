@@ -1,0 +1,1393 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>RTB-M — Rose-Thamar & Blonde Multi Services</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#f1f5f9;overflow:hidden}
+::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+// ── FIREBASE ──
+const FIREBASE_CONFIG={apiKey:"AIzaSyALpRSmqa4UHbK3Ycq9tEmxu9cbrn_KGHQ",authDomain:"rtb-rosetaxibusiness.firebaseapp.com",databaseURL:"https://rtb-rosetaxibusiness-default-rtdb.firebaseio.com",projectId:"rtb-rosetaxibusiness",storageBucket:"rtb-rosetaxibusiness.firebasestorage.app",messagingSenderId:"92324066122",appId:"1:92324066122:web:c5b87b7622aede1a67c7b3"};
+const FB_OK=!FIREBASE_CONFIG.apiKey.includes("VOTRE");
+let db=null;
+if(FB_OK){try{firebase.initializeApp(FIREBASE_CONFIG);db=firebase.database();}catch(e){console.warn("Firebase:",e);}}
+
+// ── REACT (no JSX, no babel) ──
+const {useState,useEffect,useCallback,useRef,createElement:h}=React;
+
+// ── STORAGE ──
+const SK="rtbm_v3";
+const DEF={motos:[],chauffeurs:[],contrats:[],transactions:[],depenses:[],pertes:[],produits:[],clients:[],fournisseurs:[],ventes:[],achats:[],stockMovements:[],investissements:[],modules:[],
+users:[{id:"u1",nom:"Rose Thamar",username:"rosethamar",password:"RTB@2024!",role:"superadmin",actif:true},{id:"u2",nom:"Agent RTB-M",username:"agent1",password:"Agent@123",role:"agent",actif:true}],lastSync:null};
+
+const loadLocal=()=>{try{const r=localStorage.getItem(SK);return r?{...DEF,...JSON.parse(r)}:{...DEF}}catch{return{...DEF}}};
+const saveLocal=(d)=>{try{localStorage.setItem(SK,JSON.stringify({...d,lastSync:new Date().toISOString()}));return true}catch{return false}};
+const saveFirebase=async(d)=>{if(!db)return false;try{await db.ref("rtbm_data").set(JSON.parse(JSON.stringify({...d,lastSync:new Date().toISOString()})));return true}catch(e){return false}};
+const listenFirebase=(cb)=>{if(!db)return()=>{};const ref=db.ref("rtbm_data");ref.on("value",s=>{const v=s.val();if(v){saveLocal(v);cb(v);}});return()=>ref.off("value");};
+
+const gid=(p="x")=>`${p}_${Date.now()}_${Math.random().toString(36).slice(2,6)}`;
+const fmt=(n)=>Number(n||0).toLocaleString("fr");
+const tod=()=>new Date().toISOString().split("T")[0];
+const addM=(ds,m)=>{const d=new Date(ds);d.setMonth(d.getMonth()+Number(m));return d.toISOString().split("T")[0]};
+const daysBetween=(a,b)=>Math.floor((new Date(b)-new Date(a))/86400000);
+
+// ── COLORS & STYLES ──
+const C={bg:"#f1f5f9",dark:"#0f172a",dark2:"#1e293b",primary:"#6366f1",taxi:"#f59e0b",commerce:"#10b981",invest:"#8b5cf6",rapport:"#0ea5e9",danger:"#ef4444",text:"#1e293b",textM:"#64748b",textL:"#94a3b8",border:"#e2e8f0"};
+const S={
+  inp:{width:"100%",padding:"9px 12px",border:`1px solid ${C.border}`,borderRadius:8,fontSize:13,outline:"none",background:"#fff",color:C.text},
+  lbl:{display:"block",fontSize:12,fontWeight:600,color:C.textM,marginBottom:3},
+  bp:{background:C.primary,color:"#fff",border:"none",padding:"9px 18px",borderRadius:8,fontWeight:700,fontSize:13,cursor:"pointer"},
+  bs:{background:"#f1f5f9",color:C.text,border:"none",padding:"9px 18px",borderRadius:8,fontWeight:700,fontSize:13,cursor:"pointer"},
+  bd:{background:"#fef2f2",color:C.danger,border:"1px solid #fecaca",padding:"8px 14px",borderRadius:8,fontWeight:700,fontSize:13,cursor:"pointer"},
+  card:{background:"#fff",borderRadius:12,padding:"15px 17px",boxShadow:"0 1px 4px rgba(0,0,0,.06)"},
+  table:{width:"100%",borderCollapse:"collapse",fontSize:13},
+  th:{background:"#f8fafc",padding:"9px 10px",textAlign:"left",fontWeight:700,color:C.textM,fontSize:12,borderBottom:`2px solid ${C.border}`,whiteSpace:"nowrap"},
+  td:{padding:"9px 10px",borderBottom:"1px solid #f1f5f9",color:C.text,verticalAlign:"middle"},
+  badge:{padding:"2px 9px",borderRadius:10,fontSize:12,fontWeight:700},
+  bie:{background:"#f0f9ff",border:"none",padding:"6px 9px",borderRadius:6,fontSize:13,cursor:"pointer"},
+  bid:{background:"#fef2f2",border:"none",padding:"6px 9px",borderRadius:6,fontSize:13,cursor:"pointer"},
+  modal:{position:"fixed",inset:0,background:"rgba(15,23,42,.65)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:12},
+  mbox:{background:"#fff",borderRadius:14,padding:22,width:"100%",maxWidth:680,maxHeight:"93vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,.3)"},
+  mtitle:{fontSize:17,fontWeight:800,color:C.text,margin:"0 0 16px"},
+  mact:{display:"flex",justifyContent:"flex-end",gap:10,marginTop:16,paddingTop:14,borderTop:`1px solid ${C.border}`},
+};
+
+// ── SHORTHAND HELPERS ──
+// d(tag, props, ...children) - shorthand for h()
+const d=(t,p,...c)=>h(t,p,...c);
+const div=(p,...c)=>h("div",p,...c);
+const span=(p,...c)=>h("span",p,...c);
+const btn=(p,...c)=>h("button",p,...c);
+const inp=(p)=>h("input",p);
+const sel=(p,...c)=>h("select",p,...c);
+const opt=(val,label)=>h("option",{key:val,value:val},label||val);
+const ta=(p)=>h("textarea",p);
+const tbl=(p,...c)=>h("table",p,...c);
+const tr=(p,...c)=>h("tr",p,...c);
+const th=(p,...c)=>h("th",{...S.th,...p},...c);  // Note: using S.th as base
+const td=(p,...c)=>h("td",{...S.td,...p},...c);
+const thead=(...c)=>h("thead",null,...c);
+const tbody=(...c)=>h("tbody",null,...c);
+const p=(p,...c)=>h("p",p,...c);
+const strong=(...c)=>h("strong",null,...c);
+
+// Override th/td to use style properly
+const TH=(extra,...c)=>h("th",{style:{...S.th,...(extra||{})}},...c);
+const TD=(extra,...c)=>h("td",{style:{...S.td,...(extra||{})}},...c);
+
+// ── SHARED COMPONENTS ──
+function SBadge({s}){
+  const m={actif:["#dcfce7","#166534"],disponible:["#dcfce7","#166534"],terminé:["#dbeafe","#1d4ed8"],transféré:["#d1fae5","#065f46"],suspendu:["#fef3c7","#92400e"],"en retard":["#fef2f2",C.danger],inactif:["#f1f5f9","#6b7280"],attribuée:["#fef3c7","#92400e"],"en maintenance":["#fef2f2",C.danger],Payé:["#dcfce7","#166534"],Partiel:["#fef3c7","#92400e"],Impayé:["#fef2f2",C.danger],Livré:["#dcfce7","#166534"],"En transit":["#fef3c7","#92400e"],Commandé:["#dbeafe","#1d4ed8"],Ouvert:["#fef2f2",C.danger],"En cours":["#fef3c7","#92400e"],Résolu:["#dcfce7","#166534"],Actif:["#dcfce7","#166534"]};
+  const[bg,c]=m[s]||["#f1f5f9","#6b7280"];
+  return span({style:{...S.badge,background:bg,color:c}},s);
+}
+
+function PageHeader({title,color,onAdd,label}){
+  return div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}},
+    h("h2",{style:{fontSize:18,fontWeight:800,color:color||C.text,margin:0}},title),
+    onAdd&&btn({style:{...S.bp,background:color||C.primary},onClick:onAdd},label||"+ Ajouter")
+  );
+}
+
+function StatCard({label,val,color,sub}){
+  return div({style:{...S.card,borderLeft:`4px solid ${color}`,marginBottom:12}},
+    div({style:{fontSize:11,color:C.textM}},label),
+    div({style:{fontSize:20,fontWeight:800,color}},val),
+    sub&&div({style:{fontSize:11,color:C.textL,marginTop:2}},sub)
+  );
+}
+
+function InfoBox({c,children}){
+  return div({style:{background:c||"#f0f9ff",borderRadius:8,padding:"9px 12px",fontSize:13,marginBottom:8}},children);
+}
+
+function EmptyRow({cols}){
+  return h("tr",null,h("td",{colSpan:cols,style:{...S.td,textAlign:"center",color:C.textL,padding:24}},"Aucun enregistrement"));
+}
+
+function RowActions({onEdit,onDel}){
+  return div({style:{display:"flex",gap:5}},
+    btn({style:S.bie,onClick:onEdit,title:"Modifier"},"✏️"),
+    onDel&&btn({style:S.bid,onClick:onDel,title:"Supprimer"},"🗑️")
+  );
+}
+
+function ConfirmDel({onConfirm,onCancel,item}){
+  return div({style:S.modal},
+    div({style:{...S.mbox,maxWidth:340,textAlign:"center"}},
+      div({style:{fontSize:36,marginBottom:8}},"🗑️"),
+      h("h3",{style:{color:C.danger,marginBottom:8}},"Supprimer ?"),
+      h("p",{style:{color:C.textM,fontSize:13,marginBottom:18}},item),
+      div({style:{display:"flex",gap:10,justifyContent:"center"}},
+        btn({style:S.bs,onClick:onCancel},"Annuler"),
+        btn({style:{...S.bp,background:C.danger},onClick:onConfirm},"Oui, supprimer")
+      )
+    )
+  );
+}
+
+function FG2({children}){return div({style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:11,marginBottom:11}},children);}
+function FField({label,children}){return div(null,h("label",{style:S.lbl},label),children);}
+function SectionLabel({c,children}){return div({style:{fontWeight:700,color:c||C.primary,fontSize:12,margin:"12px 0 8px",paddingBottom:4,borderBottom:`1px solid ${C.border}`}},children);}
+
+function Modal({title,children,onClose,onSave,saveLabel,saveColor}){
+  return div({style:S.modal},
+    div({style:S.mbox},
+      h("h3",{style:S.mtitle},title),
+      children,
+      div({style:S.mact},
+        btn({style:S.bs,onClick:onClose},"Annuler"),
+        btn({style:{...S.bp,background:saveColor||C.primary},onClick:onSave},saveLabel||"💾 Enregistrer")
+      )
+    )
+  );
+}
+
+// Field builder helper
+function field(label,value,onChange,type="text",placeholder=""){
+  return h(FField,{label},
+    type==="textarea"
+      ? ta({style:{...S.inp,height:60,resize:"vertical"},value:value||"",onChange:e=>onChange(e.target.value)})
+      : inp({style:S.inp,type,value:value||"",onChange:e=>onChange(e.target.value),placeholder})
+  );
+}
+
+// Select builder helper
+function selectField(label,value,onChange,options){
+  return h(FField,{label},
+    sel({style:S.inp,value:value||"",onChange:e=>onChange(e.target.value)},
+      options.map(o=>Array.isArray(o)?h("option",{key:o[0],value:o[0]},o[1]):h("option",{key:o,value:o},o))
+    )
+  );
+}
+
+// ── NAV ──
+const NAV=[
+  {id:"dashboard",icon:"📊",label:"Tableau de Bord",module:"core"},
+  {id:"motos",icon:"🏍️",label:"Motos",module:"taxi"},
+  {id:"chauffeurs",icon:"👤",label:"Chauffeurs",module:"taxi"},
+  {id:"contrats",icon:"📋",label:"Contrats",module:"taxi"},
+  {id:"transactions",icon:"💳",label:"Paiements",module:"taxi"},
+  {id:"depenses",icon:"💸",label:"Dépenses Taxi",module:"taxi"},
+  {id:"pertes",icon:"⚠️",label:"Pertes",module:"taxi"},
+  {id:"transferts",icon:"🔄",label:"Transferts",module:"taxi"},
+  {id:"produits",icon:"📦",label:"Produits",module:"commerce"},
+  {id:"ventes",icon:"🧾",label:"Ventes",module:"commerce"},
+  {id:"achats",icon:"🛒",label:"Achats Fournisseurs",module:"commerce"},
+  {id:"clients",icon:"👥",label:"Clients",module:"commerce"},
+  {id:"fournisseurs",icon:"🏭",label:"Fournisseurs",module:"commerce"},
+  {id:"inventaire",icon:"🔢",label:"Inventaire Temps Réel",module:"commerce"},
+  {id:"investissements",icon:"💼",label:"Investissements",module:"gestion"},
+  {id:"ventes_rapport",icon:"📅",label:"Ventes Journalières",module:"gestion"},
+  {id:"activites",icon:"📋",label:"Rapport d'Activités",module:"gestion"},
+  {id:"caisse",icon:"🏦",label:"Caisse & Flux",module:"core"},
+  {id:"rapports",icon:"📈",label:"Rapports Généraux",module:"core"},
+  {id:"utilisateurs",icon:"🔐",label:"Utilisateurs",module:"core",admin:true},
+  {id:"extensions",icon:"🧩",label:"Extensions",module:"core",admin:true},
+];
+const MC={taxi:C.taxi,commerce:C.commerce,gestion:C.invest,core:C.primary,ext:"#a78bfa"};
+const ML={taxi:"🏍️ MODULE TAXI",commerce:"🛒 MODULE COMMERCE",gestion:"💼 MODULE GESTION",core:"⚙️ SYSTÈME"};
+
+// ════════════════════════════════════
+//  APP ROOT
+// ════════════════════════════════════
+function App(){
+  const[data,setData]=useState(loadLocal);
+  const[session,setSession]=useState(null);
+  const[page,setPage]=useState("dashboard");
+  const[saveStatus,setSaveStatus]=useState("✓ Local");
+  const[syncStatus,setSyncStatus]=useState(FB_OK?"🔄 Connexion...":"⚠️ Mode Local");
+  const[alert,setAlert]=useState(null);
+  const[menuOpen,setMenuOpen]=useState(false);
+  const[showParams,setShowParams]=useState(false);
+  const[fbReady,setFbReady]=useState(false);
+  const saveTimer=useRef(null);
+  const isRemote=useRef(false);
+
+  useEffect(()=>{
+    if(!FB_OK){setSyncStatus("⚠️ Mode Local");return;}
+    const unsub=listenFirebase(d=>{setFbReady(true);setSyncStatus("🟢 "+new Date().toLocaleTimeString("fr"));isRemote.current=true;setData(d);});
+    return unsub;
+  },[]);
+
+  useEffect(()=>{
+    if(!session)return;
+    if(isRemote.current){isRemote.current=false;return;}
+    setSaveStatus("💾...");
+    clearTimeout(saveTimer.current);
+    saveTimer.current=setTimeout(async()=>{
+      saveLocal(data);
+      if(FB_OK&&fbReady){const ok=await saveFirebase(data);setSaveStatus(ok?"✓ Cloud":"✓ Local");if(ok)setSyncStatus("🟢 "+new Date().toLocaleTimeString("fr"));}
+      else setSaveStatus("✓ Local");
+    },800);
+  },[data,session,fbReady]);
+
+  const showAlert=(msg,type="info")=>{setAlert({msg,type});setTimeout(()=>setAlert(null),4500);};
+  const mutate=useCallback(fn=>setData(prev=>fn({...prev})),[]);
+  const navTo=(pg)=>{setPage(pg);setMenuOpen(false);};
+
+  if(!session)return h(Login,{users:data.users,onLogin:u=>setSession(u),fbOk:FB_OK});
+
+  const alertColors={info:"#3b82f6",success:"#22c55e",error:C.danger,warning:C.taxi};
+  const navItem=NAV.find(n=>n.id===page);
+  const pageColor=MC[navItem?.module||"core"];
+  const allNav=[...NAV,...(data.modules||[]).map(m=>({id:"ext_"+m.id,icon:m.icon||"🧩",label:m.nom,module:"ext"}))];
+
+  return div({style:{display:"flex",flexDirection:"column",height:"100vh",overflow:"hidden",background:C.bg}},
+    // TOPBAR
+    div({style:{display:"flex",alignItems:"center",background:C.dark,padding:"0 12px",height:50,flexShrink:0,gap:10,zIndex:600}},
+      btn({onClick:()=>setMenuOpen(o=>!o),style:{background:"transparent",border:"none",color:"#fff",fontSize:22,padding:"4px 6px",borderRadius:6,cursor:"pointer",lineHeight:1}},menuOpen?"✕":"☰"),
+      div({style:{flex:1,display:"flex",alignItems:"center",gap:8,minWidth:0}},
+        span({style:{fontWeight:900,color:"#f8fafc",fontSize:14,whiteSpace:"nowrap"}},"RTB-M"),
+        span({style:{color:"#475569",fontSize:12}},"|"),
+        span({style:{color:pageColor,fontSize:13,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},navItem?.label||"")
+      ),
+      div({style:{display:"flex",gap:8,alignItems:"center",flexShrink:0}},
+        span({style:{fontSize:10,color:saveStatus.includes("✓")?"#22c55e":C.taxi,whiteSpace:"nowrap"}},saveStatus),
+        btn({onClick:()=>setShowParams(true),style:{background:C.dark2,border:"none",color:"#94a3b8",fontSize:17,padding:"5px 8px",borderRadius:7,cursor:"pointer"}},"⚙️")
+      )
+    ),
+    // SYNC BAR
+    div({style:{background:FB_OK&&fbReady?"#052e16":"#1c1917",padding:"2px 14px",fontSize:10,color:FB_OK&&fbReady?"#86efac":"#fbbf24",flexShrink:0}},syncStatus),
+    // SIDEBAR OVERLAY
+    menuOpen&&div({style:{position:"fixed",inset:0,zIndex:490,background:"rgba(0,0,0,.5)"},onClick:()=>setMenuOpen(false)}),
+    // SIDEBAR
+    div({style:{position:"fixed",top:0,left:0,height:"100vh",width:245,background:C.dark,zIndex:500,transform:menuOpen?"translateX(0)":"translateX(-100%)",transition:"transform .25s ease",display:"flex",flexDirection:"column",overflowY:"auto"}},
+      div({style:{padding:"14px",borderBottom:`1px solid ${C.dark2}`}},
+        div({style:{fontWeight:900,color:"#f8fafc",fontSize:15}},"RTB-M"),
+        div({style:{fontSize:10,color:"#64748b"}},"Rose-Thamar & Blonde Multi Services"),
+        div({style:{marginTop:6,fontSize:10,color:FB_OK&&fbReady?"#86efac":"#f59e0b"}},syncStatus)
+      ),
+      div({style:{padding:"8px 14px",borderBottom:`1px solid ${C.dark2}`}},
+        div({style:{color:"#94a3b8",fontSize:12,fontWeight:600}},session.nom),
+        div({style:{color:C.taxi,fontSize:11}},session.role==="superadmin"?"Super Admin":"Agent")
+      ),
+      div({style:{flex:1,overflowY:"auto",paddingBottom:8}},
+        ...["core","taxi","commerce","gestion","ext"].map(grp=>{
+          const items=allNav.filter(n=>n.module===grp&&(!n.admin||session.role==="superadmin"));
+          if(!items.length)return null;
+          return div({key:grp},
+            div({style:{padding:"7px 14px 3px",fontSize:10,color:MC[grp]||"#a78bfa",fontWeight:700,letterSpacing:.8}},ML[grp]||(grp==="ext"?"🧩 EXTENSIONS":"")),
+            ...items.map(n=>btn({key:n.id,onClick:()=>navTo(n.id),style:{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"9px 16px",background:page===n.id?`${MC[grp]||"#a78bfa"}22`:"transparent",border:"none",color:page===n.id?"#f8fafc":"#94a3b8",fontSize:13,cursor:"pointer",textAlign:"left",borderLeft:page===n.id?`3px solid ${MC[grp]||"#a78bfa"}`:"3px solid transparent"}},
+              span({style:{fontSize:14}},n.icon),span(null,n.label)
+            ))
+          );
+        }).filter(Boolean)
+      ),
+      div({style:{padding:"10px 14px",borderTop:`1px solid ${C.dark2}`,display:"flex",flexDirection:"column",gap:7}},
+        btn({style:{background:C.dark2,border:"none",color:"#94a3b8",padding:"8px 12px",borderRadius:7,textAlign:"left",fontSize:13,cursor:"pointer"},onClick:()=>{setShowParams(true);setMenuOpen(false);}},"⚙️ Paramètres"),
+        btn({style:{...S.bd,width:"100%",fontSize:12},onClick:()=>{setSession(null);setPage("dashboard");setMenuOpen(false);}},"🚪 Déconnexion")
+      )
+    ),
+    // ALERT
+    alert&&div({style:{background:alertColors[alert.type],color:"#fff",padding:"8px 16px",fontSize:13,fontWeight:600,flexShrink:0}},alert.msg),
+    // CONTENT
+    div({style:{flex:1,overflowY:"auto",padding:"14px"}},
+      page==="dashboard"      ? h(Dashboard,{data,setPage:navTo,session}) :
+      page==="motos"          ? h(GMotos,{data,mutate,showAlert,session}) :
+      page==="chauffeurs"     ? h(GChauffeurs,{data,mutate,showAlert,session}) :
+      page==="contrats"       ? h(GContrats,{data,mutate,showAlert}) :
+      page==="transactions"   ? h(GTransactions,{data,mutate,showAlert,session}) :
+      page==="depenses"       ? h(GDepenses,{data,mutate,showAlert,session}) :
+      page==="pertes"         ? h(GPertes,{data,mutate,showAlert,session}) :
+      page==="transferts"     ? h(GTransferts,{data,mutate,showAlert}) :
+      page==="produits"       ? h(GProduits,{data,mutate,showAlert,session}) :
+      page==="ventes"         ? h(GVentes,{data,mutate,showAlert,session}) :
+      page==="achats"         ? h(GAchats,{data,mutate,showAlert,session}) :
+      page==="clients"        ? h(GClients,{data,mutate,showAlert,session}) :
+      page==="fournisseurs"   ? h(GFournisseurs,{data,mutate,showAlert,session}) :
+      page==="inventaire"     ? h(Inventaire,{data,mutate,showAlert}) :
+      page==="investissements"? h(GInvestissements,{data,mutate,showAlert,session}) :
+      page==="ventes_rapport" ? h(VentesJournalieres,{data}) :
+      page==="activites"      ? h(RapportActivites,{data}) :
+      page==="caisse"         ? h(Caisse,{data}) :
+      page==="rapports"       ? h(Rapports,{data}) :
+      page==="utilisateurs"&&session.role==="superadmin" ? h(GUsers,{data,mutate,showAlert}) :
+      page==="extensions"&&session.role==="superadmin"   ? h(GExtensions,{data,mutate,showAlert}) :
+      (data.modules||[]).map(m=>page==="ext_"+m.id?h(ExtView,{key:m.id,module:m}):null)
+    ),
+    showParams&&h(Parametres,{session,data,mutate,showAlert,onClose:()=>setShowParams(false),setSession})
+  );
+}
+
+// ── LOGIN ──
+function Login({users,onLogin,fbOk}){
+  const[u,setU]=useState("");const[p,setP]=useState("");const[err,setErr]=useState("");
+  const go=()=>{const usr=users.find(x=>x.username===u&&x.password===p&&x.actif);if(usr)onLogin(usr);else setErr("Identifiants incorrects.");};
+  return div({style:{minHeight:"100vh",background:`linear-gradient(135deg,${C.dark},${C.dark2})`,display:"flex",alignItems:"center",justifyContent:"center"}},
+    div({style:{background:C.dark2,borderRadius:18,padding:34,width:"100%",maxWidth:380,textAlign:"center",border:"1px solid #334155"}},
+      div({style:{fontSize:50,marginBottom:6}},"🏍️🛒"),
+      h("h1",{style:{color:"#f8fafc",fontSize:18,fontWeight:900,letterSpacing:1,margin:"0 0 2px"}},"ROSE-THAMAR & BLONDE"),
+      div({style:{color:"#f8fafc",fontSize:13,fontWeight:700,marginBottom:4}},"MULTI SERVICES — RTB-M"),
+      span({style:{color:C.primary,fontSize:11,fontStyle:"italic",display:"block",marginBottom:10}},"Mobilité, Commerce & Progrès"),
+      div({style:{background:"#0f172a",borderRadius:8,padding:"5px 12px",marginBottom:16,fontSize:11,color:fbOk?"#86efac":"#f59e0b"}},fbOk?"🟢 Firebase activé":"⚠️ Mode Local"),
+      div({style:{display:"flex",flexDirection:"column",gap:10}},
+        inp({style:{...S.inp,background:"#0f172a",color:"#f8fafc",border:"1px solid #334155"},placeholder:"Nom d'utilisateur",value:u,onChange:e=>setU(e.target.value),onKeyDown:e=>e.key==="Enter"&&go()}),
+        inp({style:{...S.inp,background:"#0f172a",color:"#f8fafc",border:"1px solid #334155"},type:"password",placeholder:"Mot de passe",value:p,onChange:e=>setP(e.target.value),onKeyDown:e=>e.key==="Enter"&&go()}),
+        err&&span({style:{color:"#ff6b6b",fontSize:12}},err),
+        btn({style:S.bp,onClick:go},"🔐 Se Connecter")
+      ),
+      span({style:{color:"#475569",fontSize:11,display:"block",marginTop:16}},"© 2024 RTB-M")
+    )
+  );
+}
+
+// ── DASHBOARD ──
+function Dashboard({data,setPage}){
+  const today=tod();
+  const contratsA=data.contrats.filter(c=>c.statut==="actif");
+  const txToday=data.transactions.filter(t=>t.date===today);
+  const totalTxToday=txToday.reduce((s,t)=>s+Number(t.montantPaye||0),0);
+  const totalEnc=data.transactions.reduce((s,t)=>s+Number(t.montantPaye||0),0);
+  const totalVentes=data.ventes.reduce((s,v)=>s+Number(v.total||0),0);
+  const ventesToday=data.ventes.filter(v=>v.date===today).reduce((s,v)=>s+Number(v.total||0),0);
+  const totalInvest=(data.investissements||[]).reduce((s,i)=>s+Number(i.montant||0),0);
+  const profitCommerce=data.ventes.reduce((s,v)=>s+Number(v.profitNet||0),0);
+  const stockAlerts=data.produits.filter(p=>Number(p.stockUnites||0)<=Number(p.minStockAlert||0));
+  const alertEch=data.contrats.filter(c=>{if(c.statut!=="actif")return false;const j=daysBetween(today,c.dateFin);return j>=0&&j<=30;});
+  const clientsDus=data.clients.filter(c=>Number(c.balanceDue||0)>0);
+  const cards=[
+    {g:"taxi",l:"Motos",v:data.motos.length,ic:"🏍️",sub:`${contratsA.length} contrats actifs`,pg:"motos"},
+    {g:"taxi",l:"Encaissé Aujourd'hui",v:`${fmt(totalTxToday)} HTG`,ic:"💳",sub:`${txToday.length} paiements`,pg:"transactions"},
+    {g:"commerce",l:"Ventes Aujourd'hui",v:`${fmt(ventesToday)} HTG`,ic:"🧾",sub:`${data.ventes.filter(v=>v.date===today).length} factures`,pg:"ventes"},
+    {g:"commerce",l:"Profit Commerce",v:`${fmt(profitCommerce)} HTG`,ic:"📈",sub:`CA: ${fmt(totalVentes)} HTG`,pg:"rapports"},
+    {g:"gestion",l:"Investissements",v:`${fmt(totalInvest)} HTG`,ic:"💼",sub:`${(data.investissements||[]).length} enregistrements`,pg:"investissements"},
+    {g:"taxi",l:"Total Taxi Encaissé",v:`${fmt(totalEnc)} HTG`,ic:"💰",sub:`${data.chauffeurs.length} chauffeurs`,pg:"caisse"},
+    {g:"commerce",l:"Produits en Stock",v:data.produits.length,ic:"📦",sub:`${stockAlerts.length} alertes`,pg:"inventaire"},
+    {g:"commerce",l:"Clients",v:data.clients.length,ic:"👥",sub:`${clientsDus.length} balances dues`,pg:"clients"},
+  ];
+  return div(null,
+    div({style:{marginBottom:12}},
+      h("h2",{style:{fontSize:18,fontWeight:800,color:C.text,margin:"0 0 2px"}},"📊 Tableau de Bord"),
+      div({style:{fontSize:12,color:C.textM}},"📅 "+new Date().toLocaleDateString("fr",{weekday:"long",year:"numeric",month:"long",day:"numeric"}))
+    ),
+    div({style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(165px,1fr))",gap:11,marginBottom:12}},
+      ...cards.map((c,i)=>{
+        const col=MC[c.g]||C.primary;
+        return div({key:i,onClick:()=>setPage(c.pg),style:{...S.card,borderLeft:`4px solid ${col}`,cursor:"pointer"}},
+          div({style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}},
+            div(null,
+              div({style:{fontSize:11,color:C.textM,fontWeight:600}},c.l),
+              div({style:{fontSize:17,fontWeight:800,color:C.text,margin:"3px 0"}},c.v),
+              div({style:{fontSize:10,color:C.textL}},c.sub)
+            ),
+            span({style:{fontSize:22}},c.ic)
+          )
+        );
+      })
+    ),
+    (alertEch.length>0||stockAlerts.length>0||clientsDus.length>0)&&div({style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(250px,1fr))",gap:11,marginBottom:12}},
+      alertEch.length>0&&div({style:{...S.card,borderLeft:`4px solid ${C.taxi}`}},
+        div({style:{fontWeight:700,color:C.taxi,fontSize:13,marginBottom:7}},"⏰ Contrats Proches"),
+        ...alertEch.slice(0,4).map(c=>{const ch=data.chauffeurs.find(x=>x.id===c.chauffeurId);return div({key:c.id,style:{fontSize:12,color:C.textM,padding:"4px 0",borderBottom:"1px solid #f1f5f9"}},`👤 ${ch?.nom||""} ${ch?.prenom||""} — `,h("b",null,daysBetween(today,c.dateFin)+"j"));})
+      ),
+      stockAlerts.length>0&&div({style:{...S.card,borderLeft:`4px solid ${C.commerce}`}},
+        div({style:{fontWeight:700,color:C.commerce,fontSize:13,marginBottom:7}},`📦 Stock Faible (${stockAlerts.length})`),
+        ...stockAlerts.slice(0,4).map(p=>div({key:p.id,style:{fontSize:12,color:C.textM,padding:"4px 0",borderBottom:"1px solid #f1f5f9"}},"📦 ",p.nom," — ",h("b",{style:{color:C.danger}},p.stockUnites||0," u.")))
+      ),
+      clientsDus.length>0&&div({style:{...S.card,borderLeft:`4px solid ${C.danger}`}},
+        div({style:{fontWeight:700,color:C.danger,fontSize:13,marginBottom:7}},`💰 Balances Dues (${clientsDus.length})`),
+        ...clientsDus.slice(0,4).map(c=>div({key:c.id,style:{fontSize:12,color:C.textM,padding:"4px 0",borderBottom:"1px solid #f1f5f9"}},"👥 ",c.nom," — ",h("b",{style:{color:C.danger}},fmt(c.balanceDue)," HTG")))
+      )
+    ),
+    div({style:S.card},
+      div({style:{fontWeight:700,color:C.text,fontSize:13,marginBottom:9}},"🧾 Dernières Ventes"),
+      div({style:{overflowX:"auto"}},
+        h("table",{style:S.table},
+          h("thead",null,h("tr",null,...["Date","Client","Total","Profit","Statut"].map(hd=>h("th",{key:hd,style:S.th},hd)))),
+          h("tbody",null,
+            ...data.ventes.slice(-6).reverse().map(v=>h("tr",{key:v.id},
+              h("td",{style:S.td},v.date),
+              h("td",{style:S.td},v.clientNom||"—"),
+              h("td",{style:{...S.td,fontWeight:700,color:C.commerce}},fmt(v.total)+" HTG"),
+              h("td",{style:{...S.td,color:"#10b981"}},fmt(v.profitNet)+" HTG"),
+              h("td",{style:S.td},h(SBadge,{s:v.statutPaiement||"Payé"}))
+            )),
+            !data.ventes.length&&h(EmptyRow,{cols:5})
+          )
+        )
+      )
+    )
+  );
+}
+
+// ── GENERIC CRUD TABLE ──
+function CrudTable({headers,rows,empty}){
+  return div({style:{...S.card,overflowX:"auto"}},
+    h("table",{style:S.table},
+      h("thead",null,h("tr",null,...headers.map(hd=>h("th",{key:hd,style:S.th},hd)))),
+      h("tbody",null,...rows,empty&&h(EmptyRow,{cols:headers.length}))
+    )
+  );
+}
+
+// ── MOTOS ──
+function GMotos({data,mutate,showAlert,session}){
+  const[showF,setShowF]=useState(false);const[editing,setEditing]=useState(null);const[search,setSearch]=useState("");const[delId,setDelId]=useState(null);
+  const em=()=>({code:"",type:"2 roues",marque:"",modele:"",annee:"",couleur:"",etat:"neuve",numeroMoteur:"",numeroChassis:"",numeroImmat:"",prixAchat:"",dateAchat:"",fraisTransport:"",fraisDedouanement:"",fraisLegalisation:"",fraisImmatriculation:"",autresFrais:"",numeroAssurance:"",dateExpAssurance:"",kilometrage:"",statut:"disponible",description:""});
+  const[form,setForm]=useState(em());
+  const F=(k)=>v=>setForm(f=>({...f,[k]:v}));
+  const coutT=(m)=>[m.prixAchat,m.fraisTransport,m.fraisDedouanement,m.fraisLegalisation,m.fraisImmatriculation,m.autresFrais].reduce((s,v)=>s+Number(v||0),0);
+  const save_=()=>{if(!form.marque||!form.modele){showAlert("Marque et modèle requis","error");return;}mutate(d=>{if(editing)d.motos=d.motos.map(m=>m.id===editing?{...form,id:editing}:m);else d.motos=[...d.motos,{...form,id:gid("moto"),dateCreation:tod()}];showAlert(editing?"Moto modifiée ✓":"Moto ajoutée ✓","success");return d;});setShowF(false);setEditing(null);setForm(em());};
+  const del_=(id)=>{mutate(d=>{d.motos=d.motos.filter(m=>m.id!==id);return d;});showAlert("Moto supprimée","warning");setDelId(null);};
+  const filtered=data.motos.filter(m=>`${m.marque}${m.modele}${m.code}${m.numeroImmat}`.toLowerCase().includes(search.toLowerCase()));
+  const txtFields=[["code","Code"],["marque","Marque *"],["modele","Modèle *"],["annee","Année"],["couleur","Couleur"],["numeroMoteur","N° Moteur"],["numeroChassis","N° Châssis"],["numeroImmat","N° Immatriculation"],["numeroAssurance","N° Assurance"],["lieuAchat","Lieu d'Achat"],["vendeur","Vendeur"]];
+  const numFields=[["prixAchat","Prix Achat (HTG)"],["fraisTransport","Frais Transport"],["fraisDedouanement","Frais Dédouanement"],["fraisLegalisation","Frais Légalisation"],["fraisImmatriculation","Frais Immatriculation"],["autresFrais","Autres Frais"],["kilometrage","Kilométrage"]];
+  const dtFields=[["dateAchat","Date Achat"],["dateExpAssurance","Exp. Assurance"]];
+  return div(null,
+    h(PageHeader,{title:"🏍️ Motos",color:C.taxi,onAdd:()=>{setForm(em());setEditing(null);setShowF(true);},label:"+ Moto"}),
+    inp({style:{...S.inp,maxWidth:280,marginBottom:12},placeholder:"🔍 Rechercher...",value:search,onChange:e=>setSearch(e.target.value)}),
+    showF&&h(Modal,{title:editing?"✏️ Modifier Moto":"➕ Nouvelle Moto",onClose:()=>{setShowF(false);setEditing(null);},onSave:save_,saveColor:C.taxi},
+      h(FG2,null,
+        ...txtFields.map(([k,l])=>h(FField,{key:k,label:l},inp({style:S.inp,value:form[k]||"",onChange:e=>F(k)(e.target.value)}))),
+        ...numFields.map(([k,l])=>h(FField,{key:k,label:l},inp({style:S.inp,type:"number",value:form[k]||"",onChange:e=>F(k)(e.target.value)}))),
+        ...dtFields.map(([k,l])=>h(FField,{key:k,label:l},inp({style:S.inp,type:"date",value:form[k]||"",onChange:e=>F(k)(e.target.value)}))),
+        h(FField,{label:"Type"},sel({style:S.inp,value:form.type,onChange:e=>F("type")(e.target.value)},h("option",{value:"2 roues"},"2 roues"),h("option",{value:"3 roues"},"3 roues"))),
+        h(FField,{label:"État"},sel({style:S.inp,value:form.etat,onChange:e=>F("etat")(e.target.value)},h("option",{value:"neuve"},"neuve"),h("option",{value:"usagée"},"usagée"))),
+        h(FField,{label:"Statut"},sel({style:S.inp,value:form.statut,onChange:e=>F("statut")(e.target.value)},h("option",{value:"disponible"},"disponible"),h("option",{value:"attribuée"},"attribuée"),h("option",{value:"en maintenance"},"en maintenance")))
+      ),
+      h(FField,{label:"Description"},ta({style:{...S.inp,height:55,resize:"vertical"},value:form.description||"",onChange:e=>F("description")(e.target.value)}))
+    ),
+    delId&&h(ConfirmDel,{onConfirm:()=>del_(delId),onCancel:()=>setDelId(null),item:`Moto: ${data.motos.find(m=>m.id===delId)?.marque} ${data.motos.find(m=>m.id===delId)?.modele}`}),
+    h(CrudTable,{headers:["Code","Type","Marque/Modèle","Immat.","État","Statut","Coût Total","Actions"],empty:!filtered.length},
+      ...filtered.map(m=>h("tr",{key:m.id},
+        h("td",{style:S.td},span({style:{...S.badge,background:"#f1f5f9",color:C.textM}},m.code||"—")),
+        h("td",{style:S.td},span({style:{...S.badge,background:m.type==="2 roues"?"#dbeafe":"#fef3c7",color:m.type==="2 roues"?"#1d4ed8":"#92400e"}},m.type)),
+        h("td",{style:S.td},h("b",null,m.marque)," ",m.modele," ",span({style:{color:C.textL}},m.annee)),
+        h("td",{style:S.td},m.numeroImmat||"—"),
+        h("td",{style:S.td},span({style:{color:m.etat==="neuve"?"#22c55e":C.taxi}},"● ",m.etat)),
+        h("td",{style:S.td},h(SBadge,{s:m.statut})),
+        h("td",{style:{...S.td,fontWeight:700}},fmt(coutT(m))+" HTG"),
+        h("td",{style:S.td},h(RowActions,{onEdit:()=>{setForm(m);setEditing(m.id);setShowF(true);},onDel:session.role==="superadmin"?()=>setDelId(m.id):null}))
+      ))
+    )
+  );
+}
+
+// ── CHAUFFEURS ──
+function GChauffeurs({data,mutate,showAlert,session}){
+  const[showF,setShowF]=useState(false);const[editing,setEditing]=useState(null);const[search,setSearch]=useState("");const[detteId,setDetteId]=useState(null);const[delId,setDelId]=useState(null);
+  const em=()=>({code:"",nom:"",prenom:"",sexe:"Masculin",dateNaissance:"",cin:"",telephone:"",whatsapp:"",adresse:"",permis:"",categoriePermis:"",dateExpPermis:"",experience:"",temoinNom:"",temoinTel:"",temoinAdresse:"",temoinRelation:"",temoinCin:"",changementCouleur:"",remplacementMoteur:"",autresModifications:"",statut:"actif"});
+  const[form,setForm]=useState(em());
+  const F=(k)=>v=>setForm(f=>({...f,[k]:v}));
+  const calcDette=(ch)=>{const ct=data.contrats.find(c=>c.chauffeurId===ch.id&&c.statut==="actif");if(!ct)return null;const jA=Math.max(0,daysBetween(ct.dateDebut,tod())+1);const txs=data.transactions.filter(t=>t.contratId===ct.id);const totalP=txs.reduce((s,t)=>s+Number(t.montantPaye||0),0);const attendu=jA*Number(ct.montantJournalier||0);return{ct,totalP,attendu,dette:Math.max(0,attendu-totalP),nbP:txs.length};};
+  const save_=()=>{if(!form.nom||!form.prenom){showAlert("Nom et prénom requis","error");return;}mutate(d=>{if(editing)d.chauffeurs=d.chauffeurs.map(c=>c.id===editing?{...form,id:editing}:c);else d.chauffeurs=[...d.chauffeurs,{...form,id:gid("ch"),dateCreation:tod()}];showAlert(editing?"Modifié ✓":"Ajouté ✓","success");return d;});setShowF(false);setEditing(null);setForm(em());};
+  const del_=(id)=>{mutate(d=>{d.chauffeurs=d.chauffeurs.filter(c=>c.id!==id);return d;});showAlert("Supprimé","warning");setDelId(null);};
+  const filtered=data.chauffeurs.filter(c=>`${c.nom}${c.prenom}${c.cin}${c.telephone}`.toLowerCase().includes(search.toLowerCase()));
+  const mkInp=(k,l,t)=>h(FField,{key:k,label:l},inp({style:S.inp,type:t||"text",value:form[k]||"",onChange:e=>F(k)(e.target.value)}));
+  return div(null,
+    h(PageHeader,{title:"👤 Chauffeurs",color:C.taxi,onAdd:()=>{setForm(em());setEditing(null);setShowF(true);},label:"+ Chauffeur"}),
+    inp({style:{...S.inp,maxWidth:280,marginBottom:12},placeholder:"🔍 Rechercher...",value:search,onChange:e=>setSearch(e.target.value)}),
+    showF&&h(Modal,{title:editing?"✏️ Modifier":"➕ Nouveau Chauffeur",onClose:()=>{setShowF(false);setEditing(null);},onSave:save_,saveColor:C.taxi},
+      h(SectionLabel,{c:C.taxi},"📋 Informations Personnelles"),
+      h(FG2,null,
+        mkInp("code","Code"),mkInp("nom","Nom *"),mkInp("prenom","Prénom *"),mkInp("cin","CIN/NIF"),
+        mkInp("telephone","Téléphone"),mkInp("whatsapp","WhatsApp"),mkInp("adresse","Adresse"),
+        mkInp("dateNaissance","Date Naissance","date"),mkInp("permis","N° Permis"),
+        mkInp("categoriePermis","Catégorie Permis"),mkInp("dateExpPermis","Exp. Permis","date"),
+        mkInp("experience","Expérience"),
+        h(FField,{label:"Sexe"},sel({style:S.inp,value:form.sexe,onChange:e=>F("sexe")(e.target.value)},h("option",null,"Masculin"),h("option",null,"Féminin"))),
+        h(FField,{label:"Statut"},sel({style:S.inp,value:form.statut,onChange:e=>F("statut")(e.target.value)},h("option",{value:"actif"},"actif"),h("option",{value:"suspendu"},"suspendu"),h("option",{value:"inactif"},"inactif")))
+      ),
+      h(SectionLabel,{c:C.taxi},"👥 Témoin"),
+      h(FG2,null,mkInp("temoinNom","Nom"),mkInp("temoinTel","Téléphone"),mkInp("temoinAdresse","Adresse"),mkInp("temoinRelation","Relation"),mkInp("temoinCin","CIN")),
+      h(SectionLabel,{c:C.taxi},"🔧 Modifications Moto"),
+      h(FG2,null,mkInp("changementCouleur","Couleur"),mkInp("remplacementMoteur","Moteur"),mkInp("autresModifications","Autres"))
+    ),
+    delId&&h(ConfirmDel,{onConfirm:()=>del_(delId),onCancel:()=>setDelId(null),item:`Chauffeur: ${data.chauffeurs.find(c=>c.id===delId)?.nom}`}),
+    detteId&&(()=>{const ch=data.chauffeurs.find(c=>c.id===detteId);const info=calcDette(ch);return div({style:S.modal},div({style:{...S.mbox,maxWidth:400}},
+      h("h3",{style:S.mtitle},"💰 Dette — ",ch?.nom," ",ch?.prenom),
+      !info?span({style:{color:C.textL}},"Aucun contrat actif."):
+      div(null,
+        div({style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:9}},
+          ...[["Attendu",`${fmt(info.attendu)} HTG`],["Payé",`${fmt(info.totalP)} HTG`],["Dette",`${fmt(info.dette)} HTG`],["Paiements",`${info.nbP} jours`],["Fin contrat",info.ct.dateFin],["Journalier",`${fmt(info.ct.montantJournalier)} HTG`]].map(([l,v])=>div({key:l,style:{background:"#f8fafc",padding:"8px 11px",borderRadius:8}},div({style:{fontSize:11,color:C.textM}},l),div({style:{fontSize:14,fontWeight:700}},v)))
+        ),
+        info.dette>0&&div({style:{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:10,color:C.danger,fontWeight:700,marginTop:10}},"⚠️ Dette : ",fmt(info.dette)," HTG")
+      ),
+      div({style:S.mact},h("button",{style:S.bs,onClick:()=>setDetteId(null)},"Fermer"))
+    ));})(),
+    h(CrudTable,{headers:["Code","Nom Complet","Téléphone","CIN","Statut","Dette","Actions"],empty:!filtered.length},
+      ...filtered.map(c=>{const info=calcDette(c);return h("tr",{key:c.id},
+        h("td",{style:S.td},span({style:{...S.badge,background:"#f1f5f9",color:C.textM}},c.code||"—")),
+        h("td",{style:S.td},h("b",null,c.nom," ",c.prenom)),
+        h("td",{style:S.td},c.telephone||"—"),h("td",{style:S.td},c.cin||"—"),
+        h("td",{style:S.td},h(SBadge,{s:c.statut})),
+        h("td",{style:S.td},info?span({style:{color:info.dette>0?C.danger:"#22c55e",fontWeight:700}},fmt(info.dette)+" HTG"):"—"),
+        h("td",{style:S.td},div({style:{display:"flex",gap:5}},
+          btn({style:S.bie,onClick:()=>{setForm(c);setEditing(c.id);setShowF(true);}},"✏️"),
+          btn({style:{...S.bie,background:"#fef3c7"},onClick:()=>setDetteId(c.id)},"💰"),
+          session.role==="superadmin"&&btn({style:S.bid,onClick:()=>setDelId(c.id)},"🗑️")
+        ))
+      );})
+    )
+  );
+}
+
+// ── CONTRATS ──
+function GContrats({data,mutate,showAlert}){
+  const[showF,setShowF]=useState(false);const[editing,setEditing]=useState(null);const[delId,setDelId]=useState(null);
+  const em=()=>({numero:"",chauffeurId:"",motoId:"",dateDebut:tod(),dureeContrat:14,montantJournalier:200,avanceVersee:0,statut:"actif",remarque:""});
+  const[form,setForm]=useState(em());const F=(k)=>v=>setForm(f=>({...f,[k]:v}));
+  const montantEst=Number(form.dureeContrat)*26*Number(form.montantJournalier);
+  const save_=()=>{if(!form.chauffeurId||!form.motoId){showAlert("Chauffeur et moto requis","error");return;}const dateFin=addM(form.dateDebut,form.dureeContrat);mutate(d=>{const ct={...form,id:editing||gid("ct"),dateFin,montantTotal:montantEst,dateCreation:tod()};if(editing)d.contrats=d.contrats.map(c=>c.id===editing?ct:c);else d.contrats=[...d.contrats,ct];showAlert(editing?"Modifié ✓":"Créé ✓","success");return d;});setShowF(false);setEditing(null);setForm(em());};
+  const del_=(id)=>{mutate(d=>{d.contrats=d.contrats.filter(c=>c.id!==id);return d;});showAlert("Supprimé","warning");setDelId(null);};
+  return div(null,
+    h(PageHeader,{title:"📋 Contrats",color:C.taxi,onAdd:()=>{setForm(em());setEditing(null);setShowF(true);},label:"+ Contrat"}),
+    showF&&h(Modal,{title:editing?"✏️ Modifier":"📋 Nouveau Contrat",onClose:()=>{setShowF(false);setEditing(null);},onSave:save_,saveColor:C.taxi},
+      h(FG2,null,
+        h(FField,{label:"N° Contrat"},inp({style:S.inp,value:form.numero,onChange:e=>F("numero")(e.target.value)})),
+        h(FField,{label:"Chauffeur *"},sel({style:S.inp,value:form.chauffeurId,onChange:e=>F("chauffeurId")(e.target.value)},h("option",{value:""},"-- Sélectionner --"),...data.chauffeurs.map(c=>h("option",{key:c.id,value:c.id},c.nom+" "+c.prenom)))),
+        h(FField,{label:"Moto *"},sel({style:S.inp,value:form.motoId,onChange:e=>F("motoId")(e.target.value)},h("option",{value:""},"-- Sélectionner --"),...data.motos.map(m=>h("option",{key:m.id,value:m.id},m.marque+" "+m.modele+" — "+(m.numeroImmat||m.code))))),
+        h(FField,{label:"Date Début"},inp({style:S.inp,type:"date",value:form.dateDebut,onChange:e=>F("dateDebut")(e.target.value)})),
+        h(FField,{label:"Durée (mois)"},inp({style:S.inp,type:"number",value:form.dureeContrat,onChange:e=>F("dureeContrat")(e.target.value)})),
+        h(FField,{label:"Montant Journalier (HTG)"},inp({style:S.inp,type:"number",value:form.montantJournalier,onChange:e=>F("montantJournalier")(e.target.value)})),
+        h(FField,{label:"Avance Versée (HTG)"},inp({style:S.inp,type:"number",value:form.avanceVersee,onChange:e=>F("avanceVersee")(e.target.value)})),
+        h(FField,{label:"Statut"},sel({style:S.inp,value:form.statut,onChange:e=>F("statut")(e.target.value)},..."actif,en retard,suspendu,terminé,transféré".split(",").map(s=>h("option",{key:s,value:s},s))))
+      ),
+      h(InfoBox,{c:"#f0fdf4"},"💰 Total Estimé : ",h("b",null,fmt(montantEst)+" HTG")),
+      h(FField,{label:"Remarque"},ta({style:{...S.inp,height:50,resize:"vertical"},value:form.remarque||"",onChange:e=>F("remarque")(e.target.value)}))
+    ),
+    delId&&h(ConfirmDel,{onConfirm:()=>del_(delId),onCancel:()=>setDelId(null),item:"ce contrat"}),
+    h(CrudTable,{headers:["N°","Chauffeur","Moto","Début","Fin","Journalier","Progression","Statut","Actions"],empty:!data.contrats.length},
+      ...data.contrats.map(c=>{
+        const ch=data.chauffeurs.find(x=>x.id===c.chauffeurId);const m=data.motos.find(x=>x.id===c.motoId);
+        const paye=data.transactions.filter(t=>t.contratId===c.id).reduce((s,t)=>s+Number(t.montantPaye||0),0);
+        const prog=c.montantTotal>0?Math.min(100,(paye/c.montantTotal)*100):0;
+        return h("tr",{key:c.id},
+          h("td",{style:S.td},span({style:{...S.badge,background:"#f1f5f9",color:C.textM}},c.numero||c.id.slice(-4))),
+          h("td",{style:S.td},ch?.nom," ",ch?.prenom),h("td",{style:S.td},m?.marque," ",m?.modele),
+          h("td",{style:S.td},c.dateDebut),h("td",{style:S.td},c.dateFin),
+          h("td",{style:S.td},fmt(c.montantJournalier)+" HTG"),
+          h("td",{style:{...S.td,minWidth:120}},
+            div({style:{fontSize:11}},fmt(paye)+"/"+fmt(c.montantTotal)+" HTG"),
+            div({style:{background:"#e2e8f0",borderRadius:4,height:5,marginTop:3}},div({style:{background:prog>=100?"#22c55e":C.taxi,width:`${prog}%`,height:"100%",borderRadius:4}})),
+            div({style:{fontSize:10,color:C.textL}},Math.round(prog)+"%")
+          ),
+          h("td",{style:S.td},h(SBadge,{s:c.statut})),
+          h("td",{style:S.td},h(RowActions,{onEdit:()=>{setForm(c);setEditing(c.id);setShowF(true);},onDel:()=>setDelId(c.id)}))
+        );
+      })
+    )
+  );
+}
+
+// ── TRANSACTIONS ──
+function GTransactions({data,mutate,showAlert,session}){
+  const[showF,setShowF]=useState(false);const[filter,setFilter]=useState("");const[releve,setReleve]=useState(null);const[delId,setDelId]=useState(null);const[editing,setEditing]=useState(null);
+  const em=()=>({chauffeurId:"",date:tod(),montantPaye:"",modePaiement:"Espèces",remarque:""});
+  const[form,setForm]=useState(em());const F=(k)=>v=>setForm(f=>({...f,[k]:v}));
+  const save_=()=>{if(!form.chauffeurId||!form.montantPaye){showAlert("Chauffeur et montant requis","error");return;}const ct=data.contrats.find(c=>c.chauffeurId===form.chauffeurId&&c.statut==="actif");const att=ct?Number(ct.montantJournalier):0;mutate(d=>{if(editing){d.transactions=d.transactions.map(t=>t.id===editing?{...t,...form,montantAttendu:att,balance:att-Number(form.montantPaye)}:t);}else{d.transactions=[...d.transactions,{...form,id:gid("tx"),contratId:ct?.id||"",montantAttendu:att,balance:att-Number(form.montantPaye),agent:session.nom,heure:new Date().toLocaleTimeString("fr")}];}return d;});showAlert(editing?"Modifié ✓":"Paiement enregistré ✓","success");setShowF(false);setEditing(null);setForm(em());};
+  const del_=(id)=>{mutate(d=>{d.transactions=d.transactions.filter(t=>t.id!==id);return d;});showAlert("Supprimé","warning");setDelId(null);};
+  const filtered=data.transactions.filter(t=>!filter||t.chauffeurId===filter).slice().reverse();
+  const ct_form=form.chauffeurId?data.contrats.find(c=>c.chauffeurId===form.chauffeurId&&c.statut==="actif"):null;
+  return div(null,
+    h(PageHeader,{title:"💳 Paiements Taxi",color:C.taxi,onAdd:()=>{setForm(em());setEditing(null);setShowF(true);},label:"+ Paiement"}),
+    div({style:{display:"flex",gap:10,marginBottom:12,flexWrap:"wrap"}},
+      sel({style:{...S.inp,maxWidth:240},value:filter,onChange:e=>setFilter(e.target.value)},
+        h("option",{value:""},"Tous les chauffeurs"),
+        ...data.chauffeurs.map(c=>h("option",{key:c.id,value:c.id},c.nom+" "+c.prenom))
+      ),
+      filter&&btn({style:{background:"#ecfdf5",color:"#065f46",border:"1px solid #a7f3d0",padding:"8px 14px",borderRadius:8,fontWeight:700,fontSize:13,cursor:"pointer"},onClick:()=>setReleve(filter)},"📄 Relevé")
+    ),
+    showF&&h(Modal,{title:editing?"✏️ Modifier":"💳 Enregistrer Paiement",onClose:()=>{setShowF(false);setEditing(null);},onSave:save_,saveColor:C.taxi},
+      h(FG2,null,
+        h(FField,{label:"Chauffeur *"},sel({style:S.inp,value:form.chauffeurId,onChange:e=>F("chauffeurId")(e.target.value)},h("option",{value:""},"-- Sélectionner --"),...data.chauffeurs.map(c=>h("option",{key:c.id,value:c.id},c.nom+" "+c.prenom)))),
+        h(FField,{label:"Date"},inp({style:S.inp,type:"date",value:form.date,onChange:e=>F("date")(e.target.value)})),
+        h(FField,{label:"Montant Payé (HTG) *"},inp({style:S.inp,type:"number",value:form.montantPaye,onChange:e=>F("montantPaye")(e.target.value)})),
+        h(FField,{label:"Mode Paiement"},sel({style:S.inp,value:form.modePaiement,onChange:e=>F("modePaiement")(e.target.value)},...["Espèces","MonCash","Natcash","Virement"].map(s=>h("option",{key:s},s))))
+      ),
+      ct_form?h(InfoBox,{c:"#f0fdf4"},"Attendu : ",h("b",null,fmt(ct_form.montantJournalier)+" HTG"),
+        form.montantPaye&&span({style:{color:ct_form.montantJournalier-Number(form.montantPaye)<=0?"#166534":C.danger}},` · Balance : ${fmt(ct_form.montantJournalier-Number(form.montantPaye))} HTG`)
+      ):form.chauffeurId&&h(InfoBox,{c:"#fef3c7"},"⚠️ Aucun contrat actif"),
+      h(FField,{label:"Remarque"},inp({style:S.inp,value:form.remarque||"",onChange:e=>F("remarque")(e.target.value)}))
+    ),
+    delId&&h(ConfirmDel,{onConfirm:()=>del_(delId),onCancel:()=>setDelId(null),item:"cette transaction"}),
+    releve&&(()=>{const ch=data.chauffeurs.find(c=>c.id===releve);const ct=data.contrats.find(c=>c.chauffeurId===releve);const txs=data.transactions.filter(t=>t.chauffeurId===releve).sort((a,b)=>a.date.localeCompare(b.date));const total=txs.reduce((s,t)=>s+Number(t.montantPaye||0),0);return div({style:S.modal},div({style:{...S.mbox,maxWidth:520}},
+      h("h3",{style:S.mtitle},"📄 Relevé — ",ch?.nom," ",ch?.prenom),
+      ct&&h(InfoBox,{c:"#f0f9ff"},ct.dateDebut," → ",ct.dateFin," | Journalier : ",h("b",null,fmt(ct.montantJournalier)+" HTG")),
+      div({style:{overflowX:"auto"}},h("table",{style:S.table},
+        h("thead",null,h("tr",null,...["Date","Payé","Balance","Mode"].map(hd=>h("th",{key:hd,style:S.th},hd)))),
+        h("tbody",null,...txs.map(t=>h("tr",{key:t.id},h("td",{style:S.td},t.date),h("td",{style:{...S.td,color:"#22c55e",fontWeight:700}},fmt(t.montantPaye)+" HTG"),h("td",{style:{...S.td,color:Number(t.balance)>0?C.danger:"#22c55e"}},fmt(t.balance)+" HTG"),h("td",{style:S.td},t.modePaiement))),
+          h("tr",null,h("td",{style:{...S.td,fontWeight:700}},"TOTAL"),h("td",{style:{...S.td,fontWeight:700,color:"#22c55e"}},fmt(total)+" HTG"),h("td",{colSpan:2})))
+      )),
+      div({style:S.mact},btn({style:S.bs,onClick:()=>setReleve(null)},"Fermer"),btn({style:S.bp,onClick:()=>window.print()},"🖨️ Imprimer"))
+    ));})(),
+    h(CrudTable,{headers:["Date","Heure","Chauffeur","Payé","Balance","Mode","Agent","Actions"],empty:!filtered.length},
+      ...filtered.map(t=>{const ch=data.chauffeurs.find(c=>c.id===t.chauffeurId);return h("tr",{key:t.id},
+        h("td",{style:S.td},t.date),h("td",{style:S.td},t.heure||"—"),h("td",{style:S.td},ch?.nom," ",ch?.prenom),
+        h("td",{style:{...S.td,color:"#22c55e",fontWeight:700}},fmt(t.montantPaye)+" HTG"),
+        h("td",{style:{...S.td,color:Number(t.balance)>0?C.danger:"#22c55e"}},fmt(t.balance)+" HTG"),
+        h("td",{style:S.td},t.modePaiement),h("td",{style:S.td},t.agent),
+        h("td",{style:S.td},h(RowActions,{onEdit:()=>{setForm({chauffeurId:t.chauffeurId,date:t.date,montantPaye:t.montantPaye,modePaiement:t.modePaiement,remarque:t.remarque||""});setEditing(t.id);setShowF(true);},onDel:session.role==="superadmin"?()=>setDelId(t.id):null}))
+      );})
+    )
+  );
+}
+
+// ── DÉPENSES ──
+const CATS_DEP=["Maintenance","Réparation","Transfert","Légalisation","Assurance","Achat pièces","Carburant","Administration","Salaire","Autre"];
+function GDepenses({data,mutate,showAlert,session}){
+  const[showF,setShowF]=useState(false);const[editing,setEditing]=useState(null);const[delId,setDelId]=useState(null);
+  const em=()=>({numero:"",date:tod(),categorie:"Maintenance",description:"",montant:"",beneficiaire:"",remarque:""});
+  const[form,setForm]=useState(em());const F=(k)=>v=>setForm(f=>({...f,[k]:v}));
+  const total=data.depenses.reduce((s,d)=>s+Number(d.montant||0),0);
+  const save_=()=>{if(!form.montant||!form.description){showAlert("Montant et description requis","error");return;}mutate(d=>{const dep={...form,id:editing||gid("dep"),agent:session.nom};if(editing)d.depenses=d.depenses.map(x=>x.id===editing?dep:x);else d.depenses=[...d.depenses,dep];showAlert(editing?"Modifié ✓":"Ajouté ✓","success");return d;});setShowF(false);setEditing(null);setForm(em());};
+  const del_=(id)=>{mutate(d=>{d.depenses=d.depenses.filter(x=>x.id!==id);return d;});showAlert("Supprimé","warning");setDelId(null);};
+  return div(null,
+    h(PageHeader,{title:"💸 Dépenses Taxi",color:C.taxi,onAdd:()=>{setForm(em());setEditing(null);setShowF(true);},label:"+ Dépense"}),
+    h(StatCard,{label:"Total Dépenses Taxi",val:`${fmt(total)} HTG`,color:C.danger}),
+    showF&&h(Modal,{title:editing?"✏️ Modifier":"➕ Nouvelle Dépense",onClose:()=>{setShowF(false);setEditing(null);},onSave:save_,saveColor:C.taxi},
+      h(FG2,null,
+        h(FField,{label:"N°"},inp({style:S.inp,value:form.numero,onChange:e=>F("numero")(e.target.value)})),
+        h(FField,{label:"Date"},inp({style:S.inp,type:"date",value:form.date,onChange:e=>F("date")(e.target.value)})),
+        h(FField,{label:"Catégorie"},sel({style:S.inp,value:form.categorie,onChange:e=>F("categorie")(e.target.value)},...CATS_DEP.map(c=>h("option",{key:c},c)))),
+        h(FField,{label:"Montant (HTG) *"},inp({style:S.inp,type:"number",value:form.montant,onChange:e=>F("montant")(e.target.value)})),
+        h(FField,{label:"Bénéficiaire"},inp({style:S.inp,value:form.beneficiaire||"",onChange:e=>F("beneficiaire")(e.target.value)})),
+        h(FField,{label:"Description *"},inp({style:S.inp,value:form.description,onChange:e=>F("description")(e.target.value)}))
+      ),
+      h(FField,{label:"Remarque"},inp({style:S.inp,value:form.remarque||"",onChange:e=>F("remarque")(e.target.value)}))
+    ),
+    delId&&h(ConfirmDel,{onConfirm:()=>del_(delId),onCancel:()=>setDelId(null),item:"cette dépense"}),
+    h(CrudTable,{headers:["N°","Date","Catégorie","Description","Montant","Bénéficiaire","Actions"],empty:!data.depenses.length},
+      ...data.depenses.slice().reverse().map(d=>h("tr",{key:d.id},
+        h("td",{style:S.td},span({style:{...S.badge,background:"#f1f5f9",color:C.textM}},d.numero||"—")),
+        h("td",{style:S.td},d.date),
+        h("td",{style:S.td},span({style:{...S.badge,background:"#fef3c7",color:"#92400e"}},d.categorie)),
+        h("td",{style:S.td},d.description),
+        h("td",{style:{...S.td,color:C.danger,fontWeight:700}},fmt(d.montant)+" HTG"),
+        h("td",{style:S.td},d.beneficiaire||"—"),
+        h("td",{style:S.td},h(RowActions,{onEdit:()=>{setForm(d);setEditing(d.id);setShowF(true);},onDel:session.role==="superadmin"?()=>setDelId(d.id):null}))
+      ))
+    )
+  );
+}
+
+// ── PERTES ──
+function GPertes({data,mutate,showAlert,session}){
+  const[showF,setShowF]=useState(false);const[editing,setEditing]=useState(null);const[delId,setDelId]=useState(null);
+  const em=()=>({type:"Vol",motoId:"",chauffeurId:"",date:tod(),description:"",coutEstime:"",montantPerdu:"",statutDossier:"Ouvert"});
+  const[form,setForm]=useState(em());const F=(k)=>v=>setForm(f=>({...f,[k]:v}));
+  const total=data.pertes.reduce((s,p)=>s+Number(p.coutEstime||0),0);
+  const save_=()=>{if(!form.coutEstime){showAlert("Coût estimé requis","error");return;}mutate(d=>{const p={...form,id:editing||gid("p"),agent:session.nom};if(editing)d.pertes=d.pertes.map(x=>x.id===editing?p:x);else d.pertes=[...d.pertes,p];showAlert(editing?"Modifié ✓":"Perte enregistrée ✓","success");return d;});setShowF(false);setEditing(null);setForm(em());};
+  const del_=(id)=>{mutate(d=>{d.pertes=d.pertes.filter(x=>x.id!==id);return d;});showAlert("Supprimé","warning");setDelId(null);};
+  return div(null,
+    h(PageHeader,{title:"⚠️ Pertes",color:C.danger,onAdd:()=>{setForm(em());setEditing(null);setShowF(true);},label:"+ Perte"}),
+    h(StatCard,{label:"Coût Total des Pertes",val:`${fmt(total)} HTG`,color:C.danger}),
+    showF&&h(Modal,{title:editing?"✏️ Modifier":"⚠️ Enregistrer Perte",onClose:()=>{setShowF(false);setEditing(null);},onSave:save_,saveColor:C.danger},
+      h(FG2,null,
+        h(FField,{label:"Type"},sel({style:S.inp,value:form.type,onChange:e=>F("type")(e.target.value)},...["Vol","Accident","Disparition","Incendie","Panne grave","Autre"].map(t=>h("option",{key:t},t)))),
+        h(FField,{label:"Date"},inp({style:S.inp,type:"date",value:form.date,onChange:e=>F("date")(e.target.value)})),
+        h(FField,{label:"Moto"},sel({style:S.inp,value:form.motoId,onChange:e=>F("motoId")(e.target.value)},h("option",{value:""},"--"),...data.motos.map(m=>h("option",{key:m.id,value:m.id},m.marque+" "+m.modele)))),
+        h(FField,{label:"Chauffeur"},sel({style:S.inp,value:form.chauffeurId,onChange:e=>F("chauffeurId")(e.target.value)},h("option",{value:""},"--"),...data.chauffeurs.map(c=>h("option",{key:c.id,value:c.id},c.nom+" "+c.prenom)))),
+        h(FField,{label:"Coût Estimé (HTG)"},inp({style:S.inp,type:"number",value:form.coutEstime,onChange:e=>F("coutEstime")(e.target.value)})),
+        h(FField,{label:"Montant Perdu (HTG)"},inp({style:S.inp,type:"number",value:form.montantPerdu,onChange:e=>F("montantPerdu")(e.target.value)})),
+        h(FField,{label:"Statut"},sel({style:S.inp,value:form.statutDossier,onChange:e=>F("statutDossier")(e.target.value)},...["Ouvert","En cours","Résolu","Fermé"].map(s=>h("option",{key:s},s))))
+      ),
+      h(FField,{label:"Description"},ta({style:{...S.inp,height:60,resize:"vertical"},value:form.description,onChange:e=>F("description")(e.target.value)}))
+    ),
+    delId&&h(ConfirmDel,{onConfirm:()=>del_(delId),onCancel:()=>setDelId(null),item:"cet enregistrement de perte"}),
+    h(CrudTable,{headers:["Date","Type","Moto","Chauffeur","Coût Estimé","Montant Perdu","Statut","Actions"],empty:!data.pertes.length},
+      ...data.pertes.slice().reverse().map(p=>{const m=data.motos.find(x=>x.id===p.motoId);const ch=data.chauffeurs.find(x=>x.id===p.chauffeurId);return h("tr",{key:p.id},
+        h("td",{style:S.td},p.date),
+        h("td",{style:S.td},span({style:{...S.badge,background:"#fef2f2",color:C.danger}},p.type)),
+        h("td",{style:S.td},m?m.marque+" "+m.modele:"—"),
+        h("td",{style:S.td},ch?ch.nom+" "+ch.prenom:"—"),
+        h("td",{style:{...S.td,color:C.danger,fontWeight:700}},fmt(p.coutEstime)+" HTG"),
+        h("td",{style:S.td},fmt(p.montantPerdu)+" HTG"),
+        h("td",{style:S.td},h(SBadge,{s:p.statutDossier})),
+        h("td",{style:S.td},h(RowActions,{onEdit:()=>{setForm(p);setEditing(p.id);setShowF(true);},onDel:session.role==="superadmin"?()=>setDelId(p.id):null}))
+      );})
+    )
+  );
+}
+
+// ── TRANSFERTS ──
+function GTransferts({data,mutate,showAlert}){
+  const today=tod();
+  const proches=data.contrats.filter(c=>{if(c.statut!=="actif")return false;const j=daysBetween(today,c.dateFin);return j>=0&&j<=60;});
+  const clotured=data.contrats.filter(c=>c.statut==="transféré");
+  const doTransfert=(id)=>{if(!confirm("Confirmer le transfert?"))return;mutate(d=>{d.contrats=d.contrats.map(c=>c.id===id?{...c,statut:"transféré",dateTransfert:today}:c);return d;});showAlert("🎉 Moto transférée!","success");};
+  return div(null,
+    h("h2",{style:{fontSize:18,fontWeight:800,color:C.taxi,marginBottom:12}},"🔄 Transferts"),
+    div({style:{...S.card,borderLeft:`4px solid ${C.taxi}`,marginBottom:12}},
+      div({style:{fontWeight:700,color:C.taxi,marginBottom:9}},"⏰ Contrats Proches Échéance (",proches.length,")"),
+      !proches.length?span({style:{color:C.textL,fontSize:13}},"Aucun."):
+      div({style:{overflowX:"auto"}},h("table",{style:S.table},
+        h("thead",null,h("tr",null,...["Chauffeur","Moto","Fin","Jours","Payé","Total","Action"].map(hd=>h("th",{key:hd,style:S.th},hd)))),
+        h("tbody",null,...proches.map(c=>{
+          const ch=data.chauffeurs.find(x=>x.id===c.chauffeurId);const m=data.motos.find(x=>x.id===c.motoId);
+          const paye=data.transactions.filter(t=>t.contratId===c.id).reduce((s,t)=>s+Number(t.montantPaye||0),0);
+          const jr=daysBetween(today,c.dateFin);const ok=paye>=Number(c.montantTotal||0);
+          return h("tr",{key:c.id},
+            h("td",{style:S.td},ch?.nom," ",ch?.prenom),h("td",{style:S.td},m?.marque," ",m?.modele),
+            h("td",{style:S.td},c.dateFin),h("td",{style:{...S.td,color:jr<=14?C.danger:C.taxi,fontWeight:700}},jr+"j"),
+            h("td",{style:{...S.td,color:"#22c55e",fontWeight:700}},fmt(paye)+" HTG"),h("td",{style:S.td},fmt(c.montantTotal)+" HTG"),
+            h("td",{style:S.td},ok?btn({style:{...S.bp,background:"#22c55e",fontSize:12,padding:"6px 12px"},onClick:()=>doTransfert(c.id)},"✅ Transférer"):span({style:{color:C.danger,fontSize:12}},"⚠️ Solde dû"))
+          );
+        }))
+      ))
+    ),
+    div({style:{...S.card,overflowX:"auto"}},
+      div({style:{fontWeight:700,color:"#22c55e",marginBottom:9}},"✅ Motos Transférées (",clotured.length,")"),
+      h("table",{style:S.table},
+        h("thead",null,h("tr",null,...["Chauffeur","Moto","Début","Fin","Total Payé","Date Transfert"].map(hd=>h("th",{key:hd,style:S.th},hd)))),
+        h("tbody",null,
+          ...clotured.map(c=>{const ch=data.chauffeurs.find(x=>x.id===c.chauffeurId);const m=data.motos.find(x=>x.id===c.motoId);const paye=data.transactions.filter(t=>t.contratId===c.id).reduce((s,t)=>s+Number(t.montantPaye||0),0);return h("tr",{key:c.id},h("td",{style:S.td},ch?.nom," ",ch?.prenom),h("td",{style:S.td},m?.marque," ",m?.modele),h("td",{style:S.td},c.dateDebut),h("td",{style:S.td},c.dateFin),h("td",{style:{...S.td,color:"#22c55e",fontWeight:700}},fmt(paye)+" HTG"),h("td",{style:S.td},c.dateTransfert||"—"));}),
+          !clotured.length&&h(EmptyRow,{cols:6})
+        )
+      )
+    )
+  );
+}
+
+// ── PRODUITS ──
+function GProduits({data,mutate,showAlert,session}){
+  const[showF,setShowF]=useState(false);const[editing,setEditing]=useState(null);const[search,setSearch]=useState("");const[delId,setDelId]=useState(null);
+  const em=()=>({code:"",nom:"",categorie:"",qualite:"",sku:"",unitesParCaisse:1,stockUnites:0,minStockAlert:10,prixAchatCaisse:0,fraisCaisse:0,prixUnite:0,prixTier3:0,prixTier6:0,prixTier12:0,prixCaisse1:0,prixCaisse3Plus:0,description:""});
+  const[form,setForm]=useState(em());const F=(k)=>v=>setForm(f=>({...f,[k]:v}));
+  const coutU=()=>{const tot=Number(form.prixAchatCaisse||0)+Number(form.fraisCaisse||0);const u=Number(form.unitesParCaisse||1);return u>0?(tot/u).toFixed(2):0;};
+  const save_=()=>{if(!form.nom||!form.categorie){showAlert("Nom et catégorie requis","error");return;}mutate(d=>{const p={...form,id:editing||gid("prod"),coutUnite:coutU(),dateCreation:tod()};if(editing)d.produits=d.produits.map(x=>x.id===editing?p:x);else d.produits=[...d.produits,p];showAlert(editing?"Modifié ✓":"Ajouté ✓","success");return d;});setShowF(false);setEditing(null);setForm(em());};
+  const del_=(id)=>{mutate(d=>{d.produits=d.produits.filter(x=>x.id!==id);return d;});showAlert("Supprimé","warning");setDelId(null);};
+  const filtered=data.produits.filter(p=>`${p.nom}${p.categorie}${p.sku}`.toLowerCase().includes(search.toLowerCase()));
+  const numF=[["prixAchatCaisse","Prix Achat/Caisse (HTG)"],["fraisCaisse","Frais/Caisse (HTG)"],["prixUnite","Prix Unité"],["prixTier3","Prix x3"],["prixTier6","Prix x6"],["prixTier12","Prix x12"],["prixCaisse1","Prix 1 Caisse"],["prixCaisse3Plus","Prix 3+ Caisses"],["unitesParCaisse","Unités/Caisse"],["stockUnites","Stock Initial"],["minStockAlert","Alerte Min Stock"]];
+  return div(null,
+    h(PageHeader,{title:"📦 Produits",color:C.commerce,onAdd:()=>{setForm(em());setEditing(null);setShowF(true);},label:"+ Produit"}),
+    inp({style:{...S.inp,maxWidth:280,marginBottom:12},placeholder:"🔍 Rechercher...",value:search,onChange:e=>setSearch(e.target.value)}),
+    showF&&h(Modal,{title:editing?"✏️ Modifier Produit":"➕ Nouveau Produit",onClose:()=>{setShowF(false);setEditing(null);},onSave:save_,saveColor:C.commerce},
+      h(SectionLabel,{c:C.commerce},"📋 Général"),
+      h(FG2,null,
+        h(FField,{label:"Nom *"},inp({style:S.inp,value:form.nom,onChange:e=>F("nom")(e.target.value)})),
+        h(FField,{label:"Catégorie *"},inp({style:S.inp,value:form.categorie,onChange:e=>F("categorie")(e.target.value)})),
+        h(FField,{label:"Qualité"},inp({style:S.inp,value:form.qualite||"",onChange:e=>F("qualite")(e.target.value)})),
+        h(FField,{label:"SKU"},inp({style:S.inp,value:form.sku||"",onChange:e=>F("sku")(e.target.value)})),
+        ...numF.map(([k,l])=>h(FField,{key:k,label:l},inp({style:S.inp,type:"number",value:form[k]||"",onChange:e=>F(k)(e.target.value)})))
+      ),
+      h(InfoBox,{c:"#f0fdf4"},"Coût unitaire calculé : ",h("b",null,coutU()+" HTG")),
+      h(FField,{label:"Description"},ta({style:{...S.inp,height:50,resize:"vertical"},value:form.description||"",onChange:e=>F("description")(e.target.value)}))
+    ),
+    delId&&h(ConfirmDel,{onConfirm:()=>del_(delId),onCancel:()=>setDelId(null),item:`Produit: ${data.produits.find(p=>p.id===delId)?.nom}`}),
+    h(CrudTable,{headers:["Nom","Catégorie","Stock","Coût U.","Prix U.","Prix Caisse","Actions"],empty:!filtered.length},
+      ...filtered.map(p=>{const bas=Number(p.stockUnites||0)<=Number(p.minStockAlert||0);return h("tr",{key:p.id},
+        h("td",{style:S.td},h("b",null,p.nom),p.qualite&&span({style:{fontSize:11,color:C.textL,display:"block"}},p.qualite)),
+        h("td",{style:S.td},span({style:{...S.badge,background:"#ecfdf5",color:"#065f46"}},p.categorie)),
+        h("td",{style:S.td},span({style:{color:bas?C.danger:"#22c55e",fontWeight:700}},p.stockUnites||0),bas&&span({style:{color:C.danger,fontSize:10}}," ⚠️")),
+        h("td",{style:S.td},fmt(p.coutUnite||0)+" HTG"),
+        h("td",{style:S.td},fmt(p.prixUnite||0)+" HTG"),
+        h("td",{style:S.td},fmt(p.prixCaisse1||0)+" HTG"),
+        h("td",{style:S.td},h(RowActions,{onEdit:()=>{setForm(p);setEditing(p.id);setShowF(true);},onDel:session.role==="superadmin"?()=>setDelId(p.id):null}))
+      );})
+    )
+  );
+}
+
+// ── VENTES ──
+function GVentes({data,mutate,showAlert,session}){
+  const PALIERS=[["prixUnite","Unité"],["prixTier3","x3"],["prixTier6","x6"],["prixTier12","x12"],["prixCaisse1","1 Caisse"],["prixCaisse3Plus","3+ Caisses"]];
+  const[showF,setShowF]=useState(false);const[viewId,setViewId]=useState(null);const[editId,setEditId]=useState(null);const[delId,setDelId]=useState(null);
+  const emF=()=>({clientNom:"",clientTel:"",date:tod(),items:[],remise:0,modePaiement:"Espèces",statutPaiement:"Payé",montantVerse:"",notes:""});
+  const[form,setForm]=useState(emF());const[itemF,setItemF]=useState({produitId:"",quantite:1,palier:"prixUnite"});
+  const addItem=()=>{const p=data.produits.find(x=>x.id===itemF.produitId);if(!p){showAlert("Sélectionner un produit","error");return;}const qte=Number(itemF.quantite||1);const prix=Number(p[itemF.palier]||0);const isC=itemF.palier.includes("Caisse");const unite=isC?Number(p.unitesParCaisse||1):1;const totalU=qte*unite;const lt=prix*qte;const ct2=Number(p.coutUnite||0)*totalU;setForm(f=>({...f,items:[...f.items,{id:gid("li"),produitId:p.id,produitNom:p.nom,palier:itemF.palier,palierLabel:PALIERS.find(x=>x[0]===itemF.palier)?.[1],quantite:qte,totalUnites:totalU,prixUnitaire:prix,lineTotal:lt,coutTotal:ct2,profit:lt-ct2}]}));setItemF({produitId:"",quantite:1,palier:"prixUnite"});};
+  const calc=()=>{const sub=form.items.reduce((s,i)=>s+i.lineTotal,0);const total=sub-Number(form.remise||0);const profitNet=form.items.reduce((s,i)=>s+i.profit,0)-Number(form.remise||0);return{sub,total,profitNet};};
+  const save_=()=>{if(!form.items.length){showAlert("Ajouter au moins un produit","error");return;}const{sub,total,profitNet}=calc();const balance=total-Number(form.montantVerse||total);
+    mutate(d=>{
+      if(editId){const old=d.ventes.find(v=>v.id===editId);(old?.items||[]).forEach(it=>{d.produits=d.produits.map(p=>p.id===it.produitId?{...p,stockUnites:Number(p.stockUnites||0)+it.totalUnites}:p);d.stockMovements=d.stockMovements.filter(m=>m.venteId!==editId);});const vente={...form,id:editId,numero:old.numero,sous_total:sub,total,profitNet,balance};d.ventes=d.ventes.map(v=>v.id===editId?vente:v);form.items.forEach(it=>{d.produits=d.produits.map(p=>p.id===it.produitId?{...p,stockUnites:Math.max(0,Number(p.stockUnites||0)-it.totalUnites)}:p);d.stockMovements=[...d.stockMovements,{id:gid("mv"),date:form.date,produitId:it.produitId,produitNom:it.produitNom,type:"Sortie (Vente)",quantite:-it.totalUnites,ref:old.numero,venteId:editId}];});}
+      else{const vente={...form,id:gid("vt"),numero:`V-${Date.now()}`,sous_total:sub,total,profitNet,balance,dateCreation:new Date().toISOString()};d.ventes=[...d.ventes,vente];form.items.forEach(it=>{d.produits=d.produits.map(p=>p.id===it.produitId?{...p,stockUnites:Math.max(0,Number(p.stockUnites||0)-it.totalUnites)}:p);d.stockMovements=[...d.stockMovements,{id:gid("mv"),date:form.date,produitId:it.produitId,produitNom:it.produitNom,type:"Sortie (Vente)",quantite:-it.totalUnites,ref:vente.numero,venteId:vente.id}];});}
+      return d;
+    });
+    showAlert(editId?"Vente modifiée ✓":"Vente enregistrée ✓","success");setShowF(false);setEditId(null);setForm(emF());
+  };
+  const startEdit=(v)=>{setForm({clientNom:v.clientNom||"",clientTel:v.clientTel||"",date:v.date,items:v.items||[],remise:v.remise||0,modePaiement:v.modePaiement,statutPaiement:v.statutPaiement||"Payé",montantVerse:v.montantVerse||"",notes:v.notes||""});setEditId(v.id);setShowF(true);};
+  const del_=(id)=>{mutate(d=>{const v=d.ventes.find(x=>x.id===id);(v?.items||[]).forEach(it=>{d.produits=d.produits.map(p=>p.id===it.produitId?{...p,stockUnites:Number(p.stockUnites||0)+it.totalUnites}:p);});d.ventes=d.ventes.filter(x=>x.id!==id);d.stockMovements=d.stockMovements.filter(m=>m.venteId!==id);return d;});showAlert("Vente supprimée, stock restauré","warning");setDelId(null);};
+  const{sub,total,profitNet}=calc();
+  const vente=data.ventes.find(v=>v.id===viewId);
+  return div(null,
+    h(PageHeader,{title:"🧾 Ventes",color:C.commerce,onAdd:()=>{setForm(emF());setEditId(null);setShowF(true);},label:"+ Nouvelle Vente"}),
+    showF&&div({style:S.modal},div({style:{...S.mbox,maxWidth:720}},
+      h("h3",{style:S.mtitle},editId?"✏️ Modifier Vente":"🧾 Nouvelle Vente"),
+      h(SectionLabel,{c:C.commerce},"👥 Client & Informations"),
+      h(FG2,null,
+        h(FField,{label:"Nom Client"},inp({style:S.inp,value:form.clientNom,onChange:e=>setForm(f=>({...f,clientNom:e.target.value}))})),
+        h(FField,{label:"Téléphone"},inp({style:S.inp,value:form.clientTel,onChange:e=>setForm(f=>({...f,clientTel:e.target.value}))})),
+        h(FField,{label:"Date"},inp({style:S.inp,type:"date",value:form.date,onChange:e=>setForm(f=>({...f,date:e.target.value}))})),
+        h(FField,{label:"Mode Paiement"},sel({style:S.inp,value:form.modePaiement,onChange:e=>setForm(f=>({...f,modePaiement:e.target.value}))},...["Espèces","MonCash","Natcash","Virement","Crédit"].map(s=>h("option",{key:s},s)))),
+        h(FField,{label:"Statut Paiement"},sel({style:S.inp,value:form.statutPaiement,onChange:e=>setForm(f=>({...f,statutPaiement:e.target.value}))},...["Payé","Partiel","Impayé"].map(s=>h("option",{key:s},s)))),
+        h(FField,{label:"Montant Versé (HTG)"},inp({style:S.inp,type:"number",value:form.montantVerse,onChange:e=>setForm(f=>({...f,montantVerse:e.target.value}))}))
+      ),
+      h(SectionLabel,{c:C.commerce},"📦 Ajouter Produit"),
+      div({style:{background:"#f8fafc",borderRadius:10,padding:12,marginBottom:10}},
+        h(FG2,null,
+          h(FField,{label:"Produit"},sel({style:S.inp,value:itemF.produitId,onChange:e=>setItemF(f=>({...f,produitId:e.target.value}))},h("option",{value:""},"-- Sélectionner --"),...data.produits.map(p=>h("option",{key:p.id,value:p.id},p.nom+" (Stock:"+p.stockUnites+")")))),
+          h(FField,{label:"Palier Prix"},sel({style:S.inp,value:itemF.palier,onChange:e=>setItemF(f=>({...f,palier:e.target.value}))},
+            ...PALIERS.map(([k,l])=>{const p=data.produits.find(x=>x.id===itemF.produitId);return h("option",{key:k,value:k},l+(p?" — "+fmt(p[k]||0)+" HTG":""));})
+          )),
+          h(FField,{label:"Quantité"},inp({style:S.inp,type:"number",min:"1",value:itemF.quantite,onChange:e=>setItemF(f=>({...f,quantite:e.target.value}))}))
+        ),
+        btn({style:{...S.bp,background:C.commerce,fontSize:12},onClick:addItem},"+ Ajouter à la facture")
+      ),
+      form.items.length>0&&div({style:{overflowX:"auto",marginBottom:10}},
+        h("table",{style:S.table},
+          h("thead",null,h("tr",null,...["Produit","Palier","Qté","Unités","Prix","Total","Profit","✕"].map(hd=>h("th",{key:hd,style:S.th},hd)))),
+          h("tbody",null,...form.items.map((it,i)=>h("tr",{key:it.id},
+            h("td",{style:S.td},it.produitNom),h("td",{style:S.td},it.palierLabel),h("td",{style:S.td},it.quantite),h("td",{style:S.td},it.totalUnites),
+            h("td",{style:S.td},fmt(it.prixUnitaire)),h("td",{style:{...S.td,fontWeight:700,color:C.commerce}},fmt(it.lineTotal)+" HTG"),
+            h("td",{style:{...S.td,color:"#10b981"}},fmt(it.profit)+" HTG"),
+            h("td",{style:S.td},btn({style:{...S.bid,padding:"3px 7px"},onClick:()=>setForm(f=>({...f,items:f.items.filter((_,j)=>j!==i)}))},"\u2715"))
+          )))
+        )
+      ),
+      h(FG2,null,h(FField,{label:"Remise (HTG)"},inp({style:S.inp,type:"number",value:form.remise,onChange:e=>setForm(f=>({...f,remise:e.target.value}))}))),
+      div({style:{background:"#f0fdf4",borderRadius:10,padding:"10px 14px",marginBottom:10}},
+        div({style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}},
+          ...[["Sous-total",fmt(sub)+" HTG"],["TOTAL",fmt(total)+" HTG"],["Profit Net",fmt(profitNet)+" HTG"]].map(([l,v])=>div({key:l},div({style:{fontSize:11,color:C.textM}},l),div({style:{fontWeight:700,color:C.commerce}},v)))
+        )
+      ),
+      h(FField,{label:"Notes"},ta({style:{...S.inp,height:45,resize:"vertical"},value:form.notes,onChange:e=>setForm(f=>({...f,notes:e.target.value}))})),
+      div({style:S.mact},
+        btn({style:S.bs,onClick:()=>{setShowF(false);setEditId(null);}},"Annuler"),
+        btn({style:{...S.bp,background:C.commerce},onClick:save_},"💾 "+(editId?"Modifier":"Enregistrer"))
+      )
+    )),
+    delId&&h(ConfirmDel,{onConfirm:()=>del_(delId),onCancel:()=>setDelId(null),item:"cette vente (stock sera restauré)"}),
+    vente&&div({style:S.modal},div({style:{...S.mbox,maxWidth:520}},
+      h("h3",{style:S.mtitle},"🧾 ",vente.numero),
+      div({style:{fontSize:13,color:C.textM,marginBottom:10}},vente.date," · ",vente.clientNom||"—"),
+      div({style:{overflowX:"auto"}},h("table",{style:S.table},
+        h("thead",null,h("tr",null,...["Produit","Palier","Qté","Prix","Total"].map(hd=>h("th",{key:hd,style:S.th},hd)))),
+        h("tbody",null,...(vente.items||[]).map(it=>h("tr",{key:it.id},h("td",{style:S.td},it.produitNom),h("td",{style:S.td},it.palierLabel),h("td",{style:S.td},it.quantite),h("td",{style:S.td},fmt(it.prixUnitaire)+" HTG"),h("td",{style:{...S.td,fontWeight:700}},fmt(it.lineTotal)+" HTG"))))
+      )),
+      div({style:{marginTop:10,padding:"10px 14px",background:"#f0fdf4",borderRadius:8,fontSize:13}},h("b",null,"Total : ",fmt(vente.total)+" HTG")," · Profit : ",fmt(vente.profitNet)+" HTG · ",h(SBadge,{s:vente.statutPaiement||"Payé"})),
+      div({style:S.mact},btn({style:S.bs,onClick:()=>setViewId(null)},"Fermer"),btn({style:{...S.bp,background:C.commerce},onClick:()=>{startEdit(vente);setViewId(null);}},"✏️ Modifier"),btn({style:S.bp,onClick:()=>window.print()},"🖨️ Imprimer"))
+    )),
+    h(CrudTable,{headers:["N°","Date","Client","Articles","Total","Profit","Statut","Actions"],empty:!data.ventes.length},
+      ...data.ventes.slice().reverse().map(v=>h("tr",{key:v.id},
+        h("td",{style:S.td},span({style:{...S.badge,background:"#ecfdf5",color:"#065f46"}},v.numero)),
+        h("td",{style:S.td},v.date),h("td",{style:S.td},v.clientNom||"—"),
+        h("td",{style:S.td},(v.items||[]).length),
+        h("td",{style:{...S.td,fontWeight:700,color:C.commerce}},fmt(v.total)+" HTG"),
+        h("td",{style:{...S.td,color:"#10b981"}},fmt(v.profitNet)+" HTG"),
+        h("td",{style:S.td},h(SBadge,{s:v.statutPaiement||"Payé"})),
+        h("td",{style:S.td},div({style:{display:"flex",gap:5}},
+          btn({style:S.bie,onClick:()=>setViewId(v.id)},"👁️"),
+          btn({style:S.bie,onClick:()=>startEdit(v)},"✏️"),
+          session.role==="superadmin"&&btn({style:S.bid,onClick:()=>setDelId(v.id)},"🗑️")
+        ))
+      ))
+    )
+  );
+}
+
+// ── ACHATS ──
+function GAchats({data,mutate,showAlert,session}){
+  const[showF,setShowF]=useState(false);const[editing,setEditing]=useState(null);const[delId,setDelId]=useState(null);
+  const emF=()=>({numero:"",fournisseurNom:"",fournisseurTel:"",date:tod(),statutLivraison:"Commandé",statutPaiement:"Payé",items:[],notes:""});
+  const[form,setForm]=useState(emF());const[itemF,setItemF]=useState({produitId:"",nbCaisses:1});
+  const addItem=()=>{const p=data.produits.find(x=>x.id===itemF.produitId);if(!p){showAlert("Sélectionner un produit","error");return;}const c2=Number(itemF.nbCaisses||1);const tu=c2*Number(p.unitesParCaisse||1);const cc=(Number(p.prixAchatCaisse||0)+Number(p.fraisCaisse||0));setForm(f=>({...f,items:[...f.items,{id:gid("ai"),produitId:p.id,produitNom:p.nom,caisses:c2,totalUnites:tu,coutCaisse:cc,totalCout:c2*cc}]}));setItemF({produitId:"",nbCaisses:1});};
+  const total=form.items.reduce((s,i)=>s+i.totalCout,0);
+  const save_=()=>{if(!form.items.length){showAlert("Ajouter au moins un produit","error");return;}mutate(d=>{
+    if(editing){const old=d.achats.find(a=>a.id===editing);if(old?.statutLivraison==="Livré")(old.items||[]).forEach(it=>{d.produits=d.produits.map(p=>p.id===it.produitId?{...p,stockUnites:Number(p.stockUnites||0)-it.totalUnites}:p);});const a={...form,id:editing,numero:old.numero,totalGeneral:total};d.achats=d.achats.map(x=>x.id===editing?a:x);if(form.statutLivraison==="Livré")form.items.forEach(it=>{d.produits=d.produits.map(p=>p.id===it.produitId?{...p,stockUnites:Number(p.stockUnites||0)+it.totalUnites}:p);d.stockMovements=[...d.stockMovements,{id:gid("mv"),date:form.date,produitId:it.produitId,produitNom:it.produitNom,type:"Entrée (Achat)",quantite:it.totalUnites,ref:old.numero}];});}
+    else{const a={...form,id:gid("ach"),numero:form.numero||`A-${Date.now()}`,totalGeneral:total,dateCreation:new Date().toISOString()};d.achats=[...d.achats,a];if(form.statutLivraison==="Livré")form.items.forEach(it=>{d.produits=d.produits.map(p=>p.id===it.produitId?{...p,stockUnites:Number(p.stockUnites||0)+it.totalUnites}:p);d.stockMovements=[...d.stockMovements,{id:gid("mv"),date:form.date,produitId:it.produitId,produitNom:it.produitNom,type:"Entrée (Achat)",quantite:it.totalUnites,ref:a.numero}];});}
+    return d;
+  });showAlert(editing?"Achat modifié ✓":"Achat enregistré ✓","success");setShowF(false);setEditing(null);setForm(emF());};
+  const del_=(id)=>{mutate(d=>{const a=d.achats.find(x=>x.id===id);if(a?.statutLivraison==="Livré")(a.items||[]).forEach(it=>{d.produits=d.produits.map(p=>p.id===it.produitId?{...p,stockUnites:Math.max(0,Number(p.stockUnites||0)-it.totalUnites)}:p);});d.achats=d.achats.filter(x=>x.id!==id);return d;});showAlert("Achat supprimé","warning");setDelId(null);};
+  return div(null,
+    h(PageHeader,{title:"🛒 Achats Fournisseurs",color:C.commerce,onAdd:()=>{setForm(emF());setEditing(null);setShowF(true);},label:"+ Nouvel Achat"}),
+    showF&&div({style:S.modal},div({style:{...S.mbox,maxWidth:700}},
+      h("h3",{style:S.mtitle},editing?"✏️ Modifier Achat":"🛒 Nouvel Achat"),
+      h(FG2,null,
+        h(FField,{label:"N° Commande"},inp({style:S.inp,value:form.numero,onChange:e=>setForm(f=>({...f,numero:e.target.value}))})),
+        h(FField,{label:"Fournisseur"},inp({style:S.inp,value:form.fournisseurNom,onChange:e=>setForm(f=>({...f,fournisseurNom:e.target.value}))})),
+        h(FField,{label:"Téléphone"},inp({style:S.inp,value:form.fournisseurTel,onChange:e=>setForm(f=>({...f,fournisseurTel:e.target.value}))})),
+        h(FField,{label:"Date"},inp({style:S.inp,type:"date",value:form.date,onChange:e=>setForm(f=>({...f,date:e.target.value}))})),
+        h(FField,{label:"Statut Livraison"},sel({style:S.inp,value:form.statutLivraison,onChange:e=>setForm(f=>({...f,statutLivraison:e.target.value}))},...["Commandé","En transit","Livré"].map(s=>h("option",{key:s},s)))),
+        h(FField,{label:"Statut Paiement"},sel({style:S.inp,value:form.statutPaiement,onChange:e=>setForm(f=>({...f,statutPaiement:e.target.value}))},...["Payé","Partiel","Impayé"].map(s=>h("option",{key:s},s))))
+      ),
+      div({style:{background:"#f8fafc",borderRadius:10,padding:12,marginBottom:10}},
+        h(FG2,null,
+          h(FField,{label:"Produit"},sel({style:S.inp,value:itemF.produitId,onChange:e=>setItemF(f=>({...f,produitId:e.target.value}))},h("option",{value:""},"-- Sélectionner --"),...data.produits.map(p=>h("option",{key:p.id,value:p.id},p.nom)))),
+          h(FField,{label:"Caisses"},inp({style:S.inp,type:"number",min:"1",value:itemF.nbCaisses,onChange:e=>setItemF(f=>({...f,nbCaisses:e.target.value}))}))
+        ),
+        btn({style:{...S.bp,background:C.commerce,fontSize:12},onClick:addItem},"+ Ajouter")
+      ),
+      form.items.length>0&&div({style:{overflowX:"auto",marginBottom:10}},h("table",{style:S.table},
+        h("thead",null,h("tr",null,...["Produit","Caisses","Unités","Coût/C","Total","✕"].map(hd=>h("th",{key:hd,style:S.th},hd)))),
+        h("tbody",null,...form.items.map((it,i)=>h("tr",{key:it.id},h("td",{style:S.td},it.produitNom),h("td",{style:S.td},it.caisses),h("td",{style:S.td},it.totalUnites),h("td",{style:S.td},fmt(it.coutCaisse)+" HTG"),h("td",{style:{...S.td,fontWeight:700,color:C.danger}},fmt(it.totalCout)+" HTG"),h("td",{style:S.td},btn({style:{...S.bid,padding:"3px 7px"},onClick:()=>setForm(f=>({...f,items:f.items.filter((_,j)=>j!==i)}))},"\u2715")))))
+      )),
+      h(InfoBox,{c:"#fef2f2"},"Total : ",h("b",{style:{color:C.danger}},fmt(total)+" HTG")),
+      h(InfoBox,{c:"#fef3c7"},'Si statut "Livré" → stock mis à jour automatiquement'),
+      div({style:S.mact},btn({style:S.bs,onClick:()=>{setShowF(false);setEditing(null);}},"Annuler"),btn({style:{...S.bp,background:C.commerce},onClick:save_},"💾 "+(editing?"Modifier":"Enregistrer")))
+    )),
+    delId&&h(ConfirmDel,{onConfirm:()=>del_(delId),onCancel:()=>setDelId(null),item:"cet achat"}),
+    h(CrudTable,{headers:["N°","Date","Fournisseur","Articles","Total","Livraison","Paiement","Actions"],empty:!data.achats.length},
+      ...data.achats.slice().reverse().map(a=>h("tr",{key:a.id},
+        h("td",{style:S.td},span({style:{...S.badge,background:"#fef3c7",color:"#92400e"}},a.numero)),
+        h("td",{style:S.td},a.date),h("td",{style:S.td},a.fournisseurNom||"—"),h("td",{style:S.td},(a.items||[]).length),
+        h("td",{style:{...S.td,fontWeight:700,color:C.danger}},fmt(a.totalGeneral)+" HTG"),
+        h("td",{style:S.td},h(SBadge,{s:a.statutLivraison||"Commandé"})),
+        h("td",{style:S.td},h(SBadge,{s:a.statutPaiement||"Payé"})),
+        h("td",{style:S.td},h(RowActions,{onEdit:()=>{setForm({...a,items:a.items||[]});setEditing(a.id);setShowF(true);},onDel:session.role==="superadmin"?()=>setDelId(a.id):null}))
+      ))
+    )
+  );
+}
+
+// ── CLIENTS ──
+function GClients({data,mutate,showAlert,session}){
+  const[showF,setShowF]=useState(false);const[editing,setEditing]=useState(null);const[search,setSearch]=useState("");const[delId,setDelId]=useState(null);
+  const em=()=>({nom:"",telephone:"",whatsapp:"",adresse:"",type:"Détaillant",balanceDue:0,notes:""});
+  const[form,setForm]=useState(em());const F=(k)=>v=>setForm(f=>({...f,[k]:v}));
+  const save_=()=>{if(!form.nom){showAlert("Nom requis","error");return;}mutate(d=>{if(editing)d.clients=d.clients.map(c=>c.id===editing?{...form,id:editing}:c);else d.clients=[...d.clients,{...form,id:gid("cli"),dateCreation:tod()}];showAlert(editing?"Modifié ✓":"Ajouté ✓","success");return d;});setShowF(false);setEditing(null);setForm(em());};
+  const del_=(id)=>{mutate(d=>{d.clients=d.clients.filter(c=>c.id!==id);return d;});showAlert("Supprimé","warning");setDelId(null);};
+  const filtered=data.clients.filter(c=>`${c.nom}${c.telephone}`.toLowerCase().includes(search.toLowerCase()));
+  return div(null,
+    h(PageHeader,{title:"👥 Clients",color:C.commerce,onAdd:()=>{setForm(em());setEditing(null);setShowF(true);},label:"+ Client"}),
+    inp({style:{...S.inp,maxWidth:280,marginBottom:12},placeholder:"🔍 Rechercher...",value:search,onChange:e=>setSearch(e.target.value)}),
+    showF&&h(Modal,{title:editing?"✏️ Modifier":"➕ Nouveau Client",onClose:()=>{setShowF(false);setEditing(null);},onSave:save_,saveColor:C.commerce},
+      h(FG2,null,
+        h(FField,{label:"Nom *"},inp({style:S.inp,value:form.nom,onChange:e=>F("nom")(e.target.value)})),
+        h(FField,{label:"Téléphone"},inp({style:S.inp,value:form.telephone||"",onChange:e=>F("telephone")(e.target.value)})),
+        h(FField,{label:"WhatsApp"},inp({style:S.inp,value:form.whatsapp||"",onChange:e=>F("whatsapp")(e.target.value)})),
+        h(FField,{label:"Adresse"},inp({style:S.inp,value:form.adresse||"",onChange:e=>F("adresse")(e.target.value)})),
+        h(FField,{label:"Type"},sel({style:S.inp,value:form.type,onChange:e=>F("type")(e.target.value)},...["Détaillant","Grossiste","Particulier","Revendeur"].map(s=>h("option",{key:s},s)))),
+        h(FField,{label:"Balance Due (HTG)"},inp({style:S.inp,type:"number",value:form.balanceDue||0,onChange:e=>F("balanceDue")(e.target.value)}))
+      ),
+      h(FField,{label:"Notes"},ta({style:{...S.inp,height:50,resize:"vertical"},value:form.notes||"",onChange:e=>F("notes")(e.target.value)}))
+    ),
+    delId&&h(ConfirmDel,{onConfirm:()=>del_(delId),onCancel:()=>setDelId(null),item:`Client: ${data.clients.find(c=>c.id===delId)?.nom}`}),
+    h(CrudTable,{headers:["Nom","Téléphone","Adresse","Type","Balance Due","Actions"],empty:!filtered.length},
+      ...filtered.map(c=>h("tr",{key:c.id},
+        h("td",{style:S.td},h("b",null,c.nom)),h("td",{style:S.td},c.telephone||"—"),h("td",{style:S.td},c.adresse||"—"),
+        h("td",{style:S.td},span({style:{...S.badge,background:"#ecfdf5",color:"#065f46"}},c.type)),
+        h("td",{style:S.td},span({style:{color:Number(c.balanceDue||0)>0?C.danger:"#22c55e",fontWeight:700}},fmt(c.balanceDue||0)+" HTG")),
+        h("td",{style:S.td},h(RowActions,{onEdit:()=>{setForm(c);setEditing(c.id);setShowF(true);},onDel:session.role==="superadmin"?()=>setDelId(c.id):null}))
+      ))
+    )
+  );
+}
+
+// ── FOURNISSEURS ──
+function GFournisseurs({data,mutate,showAlert,session}){
+  const[showF,setShowF]=useState(false);const[editing,setEditing]=useState(null);const[search,setSearch]=useState("");const[delId,setDelId]=useState(null);
+  const em=()=>({nom:"",telephone:"",whatsapp:"",adresse:"",specialite:"",notes:""});
+  const[form,setForm]=useState(em());const F=(k)=>v=>setForm(f=>({...f,[k]:v}));
+  const save_=()=>{if(!form.nom){showAlert("Nom requis","error");return;}mutate(d=>{if(editing)d.fournisseurs=d.fournisseurs.map(f=>f.id===editing?{...form,id:editing}:f);else d.fournisseurs=[...d.fournisseurs,{...form,id:gid("sup"),dateCreation:tod()}];showAlert(editing?"Modifié ✓":"Ajouté ✓","success");return d;});setShowF(false);setEditing(null);setForm(em());};
+  const del_=(id)=>{mutate(d=>{d.fournisseurs=d.fournisseurs.filter(x=>x.id!==id);return d;});showAlert("Supprimé","warning");setDelId(null);};
+  const filtered=data.fournisseurs.filter(f=>`${f.nom}${f.specialite}`.toLowerCase().includes(search.toLowerCase()));
+  return div(null,
+    h(PageHeader,{title:"🏭 Fournisseurs",color:C.commerce,onAdd:()=>{setForm(em());setEditing(null);setShowF(true);},label:"+ Fournisseur"}),
+    inp({style:{...S.inp,maxWidth:280,marginBottom:12},placeholder:"🔍 Rechercher...",value:search,onChange:e=>setSearch(e.target.value)}),
+    showF&&h(Modal,{title:editing?"✏️ Modifier":"➕ Nouveau Fournisseur",onClose:()=>{setShowF(false);setEditing(null);},onSave:save_,saveColor:C.commerce},
+      h(FG2,null,
+        h(FField,{label:"Nom *"},inp({style:S.inp,value:form.nom,onChange:e=>F("nom")(e.target.value)})),
+        h(FField,{label:"Téléphone"},inp({style:S.inp,value:form.telephone||"",onChange:e=>F("telephone")(e.target.value)})),
+        h(FField,{label:"WhatsApp"},inp({style:S.inp,value:form.whatsapp||"",onChange:e=>F("whatsapp")(e.target.value)})),
+        h(FField,{label:"Adresse"},inp({style:S.inp,value:form.adresse||"",onChange:e=>F("adresse")(e.target.value)})),
+        h(FField,{label:"Spécialité"},inp({style:S.inp,value:form.specialite||"",onChange:e=>F("specialite")(e.target.value)}))
+      ),
+      h(FField,{label:"Notes"},ta({style:{...S.inp,height:50,resize:"vertical"},value:form.notes||"",onChange:e=>F("notes")(e.target.value)}))
+    ),
+    delId&&h(ConfirmDel,{onConfirm:()=>del_(delId),onCancel:()=>setDelId(null),item:`Fournisseur: ${data.fournisseurs.find(f=>f.id===delId)?.nom}`}),
+    h(CrudTable,{headers:["Nom","Téléphone","Adresse","Spécialité","Commandes","Actions"],empty:!filtered.length},
+      ...filtered.map(f=>{const total2=data.achats.filter(a=>a.fournisseurNom===f.nom).length;return h("tr",{key:f.id},
+        h("td",{style:S.td},h("b",null,f.nom)),h("td",{style:S.td},f.telephone||"—"),h("td",{style:S.td},f.adresse||"—"),h("td",{style:S.td},f.specialite||"—"),h("td",{style:S.td},total2),
+        h("td",{style:S.td},h(RowActions,{onEdit:()=>{setForm(f);setEditing(f.id);setShowF(true);},onDel:session.role==="superadmin"?()=>setDelId(f.id):null}))
+      );})
+    )
+  );
+}
+
+// ── INVENTAIRE ──
+function Inventaire({data,mutate,showAlert}){
+  const[showAjust,setShowAjust]=useState(false);
+  const[ajF,setAjF]=useState({produitId:"",type:"Ajustement",quantite:0,raison:"",date:tod()});
+  const valeurTotale=data.produits.reduce((s,p)=>s+Number(p.stockUnites||0)*Number(p.coutUnite||0),0);
+  const saveAjust=()=>{if(!ajF.produitId||!ajF.quantite){showAlert("Produit et quantité requis","error");return;}const q=Number(ajF.quantite);mutate(d=>{d.produits=d.produits.map(p=>p.id===ajF.produitId?{...p,stockUnites:Math.max(0,Number(p.stockUnites||0)+q)}:p);d.stockMovements=[...d.stockMovements,{id:gid("mv"),date:ajF.date,produitId:ajF.produitId,produitNom:data.produits.find(p=>p.id===ajF.produitId)?.nom,type:ajF.type,quantite:q,ref:"AJUST",raison:ajF.raison}];return d;});showAlert("Stock ajusté ✓","success");setShowAjust(false);setAjF({produitId:"",type:"Ajustement",quantite:0,raison:"",date:tod()});};
+  return div(null,
+    div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}},
+      h("h2",{style:{fontSize:18,fontWeight:800,color:C.commerce,margin:0}},"🔢 Inventaire Temps Réel"),
+      btn({style:{...S.bp,background:C.commerce,fontSize:12},onClick:()=>setShowAjust(true)},"⚖️ Ajuster Stock")
+    ),
+    div({style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:11,marginBottom:12}},
+      ...[{l:"Total Produits",v:data.produits.length,c:C.commerce},{l:"Valeur du Stock",v:`${fmt(valeurTotale)} HTG`,c:C.invest},{l:"Alertes Stock Bas",v:data.produits.filter(p=>Number(p.stockUnites||0)<=Number(p.minStockAlert||0)).length,c:C.danger},{l:"Mouvements",v:data.stockMovements.length,c:C.taxi}].map((c,i)=>div({key:i,style:{...S.card,borderLeft:`4px solid ${c.c}`}},div({style:{fontSize:11,color:C.textM}},c.l),div({style:{fontSize:18,fontWeight:800,color:c.c}},c.v)))
+    ),
+    showAjust&&h(Modal,{title:"⚖️ Ajustement de Stock",onClose:()=>setShowAjust(false),onSave:saveAjust,saveColor:C.commerce},
+      h(FG2,null,
+        h(FField,{label:"Produit *"},sel({style:S.inp,value:ajF.produitId,onChange:e=>setAjF(f=>({...f,produitId:e.target.value}))},h("option",{value:""},"-- Sélectionner --"),...data.produits.map(p=>h("option",{key:p.id,value:p.id},p.nom+" (Stock: "+p.stockUnites+")")))),
+        h(FField,{label:"Type"},sel({style:S.inp,value:ajF.type,onChange:e=>setAjF(f=>({...f,type:e.target.value}))},...["Ajustement","Correction inventaire","Retour fournisseur","Perte/Casse","Don"].map(s=>h("option",{key:s},s)))),
+        h(FField,{label:"Quantité (+ ajout / - retrait)"},inp({style:S.inp,type:"number",value:ajF.quantite,onChange:e=>setAjF(f=>({...f,quantite:e.target.value}))})),
+        h(FField,{label:"Date"},inp({style:S.inp,type:"date",value:ajF.date,onChange:e=>setAjF(f=>({...f,date:e.target.value}))}))
+      ),
+      h(FField,{label:"Raison"},inp({style:S.inp,value:ajF.raison,onChange:e=>setAjF(f=>({...f,raison:e.target.value}))}))
+    ),
+    div({style:{...S.card,overflowX:"auto",marginBottom:12}},
+      div({style:{fontWeight:700,marginBottom:9,fontSize:13}},"📦 État des Stocks — Temps Réel"),
+      h("table",{style:S.table},
+        h("thead",null,h("tr",null,...["Produit","Catégorie","Stock Actuel","Min Alert","Valeur Stock","État"].map(hd=>h("th",{key:hd,style:S.th},hd)))),
+        h("tbody",null,
+          ...data.produits.map(p=>{const bas=Number(p.stockUnites||0)<=Number(p.minStockAlert||0);return h("tr",{key:p.id},
+            h("td",{style:S.td},h("b",null,p.nom)),h("td",{style:S.td},p.categorie),
+            h("td",{style:{...S.td,fontWeight:700,color:bas?C.danger:"#22c55e",fontSize:16}},p.stockUnites||0," u."),
+            h("td",{style:S.td},p.minStockAlert||0," u."),
+            h("td",{style:S.td},fmt((p.stockUnites||0)*Number(p.coutUnite||0))+" HTG"),
+            h("td",{style:S.td},span({style:{...S.badge,background:bas?"#fef2f2":"#ecfdf5",color:bas?C.danger:"#065f46"}},bas?"⚠️ Stock Bas":"✅ Normal"))
+          );}),
+          !data.produits.length&&h(EmptyRow,{cols:6})
+        )
+      )
+    ),
+    div({style:{...S.card,overflowX:"auto"}},
+      div({style:{fontWeight:700,marginBottom:9,fontSize:13}},"🔄 Derniers Mouvements"),
+      h("table",{style:S.table},
+        h("thead",null,h("tr",null,...["Date","Produit","Type","Quantité","Référence","Raison"].map(hd=>h("th",{key:hd,style:S.th},hd)))),
+        h("tbody",null,
+          ...data.stockMovements.slice(-20).reverse().map(m=>h("tr",{key:m.id},
+            h("td",{style:S.td},m.date),h("td",{style:S.td},m.produitNom),
+            h("td",{style:S.td},span({style:{...S.badge,background:m.quantite>0?"#dcfce7":"#fef2f2",color:m.quantite>0?"#166534":C.danger}},m.type)),
+            h("td",{style:{...S.td,fontWeight:700,color:m.quantite>0?"#22c55e":C.danger}},(m.quantite>0?"+":"")+m.quantite),
+            h("td",{style:S.td},m.ref||"—"),h("td",{style:S.td},m.raison||"—")
+          )),
+          !data.stockMovements.length&&h(EmptyRow,{cols:6})
+        )
+      )
+    )
+  );
+}
+
+// ── INVESTISSEMENTS ──
+function GInvestissements({data,mutate,showAlert,session}){
+  const[showF,setShowF]=useState(false);const[editing,setEditing]=useState(null);const[delId,setDelId]=useState(null);
+  const em=()=>({titre:"",categorie:"Initial",montant:"",date:tod(),source:"Fonds propres",description:"",statut:"Actif",rendementAttendu:"",notes:""});
+  const[form,setForm]=useState(em());const F=(k)=>v=>setForm(f=>({...f,[k]:v}));
+  const investissements=data.investissements||[];
+  const totalInvest=investissements.reduce((s,i)=>s+Number(i.montant||0),0);
+  const totalVentes=data.ventes.reduce((s,v)=>s+Number(v.total||0),0);
+  const totalEncTaxi=data.transactions.reduce((s,t)=>s+Number(t.montantPaye||0),0);
+  const totalDep=data.depenses.reduce((s,d)=>s+Number(d.montant||0),0);
+  const profitGlobal=(totalVentes+totalEncTaxi)-totalDep-data.pertes.reduce((s,p)=>s+Number(p.coutEstime||0),0);
+  const ROI=totalInvest>0?((profitGlobal/totalInvest)*100).toFixed(1):0;
+  const save_=()=>{if(!form.titre||!form.montant){showAlert("Titre et montant requis","error");return;}mutate(d=>{if(!d.investissements)d.investissements=[];const inv={...form,id:editing||gid("inv"),dateCreation:tod()};if(editing)d.investissements=d.investissements.map(i=>i.id===editing?inv:i);else d.investissements=[...d.investissements,inv];showAlert(editing?"Modifié ✓":"Ajouté ✓","success");return d;});setShowF(false);setEditing(null);setForm(em());};
+  const del_=(id)=>{mutate(d=>{d.investissements=(d.investissements||[]).filter(i=>i.id!==id);return d;});showAlert("Supprimé","warning");setDelId(null);};
+  return div(null,
+    h(PageHeader,{title:"💼 Investissements",color:C.invest,onAdd:()=>{setForm(em());setEditing(null);setShowF(true);},label:"+ Investissement"}),
+    div({style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(165px,1fr))",gap:11,marginBottom:12}},
+      ...[{l:"Total Investi",v:`${fmt(totalInvest)} HTG`,c:C.invest},{l:"Profit Global",v:`${fmt(profitGlobal)} HTG`,c:profitGlobal>=0?"#22c55e":C.danger},{l:"ROI",v:`${ROI}%`,c:Number(ROI)>=0?"#22c55e":C.danger},{l:"Nb Investissements",v:investissements.length,c:C.primary}].map((c,i)=>div({key:i,style:{...S.card,borderLeft:`4px solid ${c.c}`}},div({style:{fontSize:11,color:C.textM}},c.l),div({style:{fontSize:18,fontWeight:800,color:c.c}},c.v)))
+    ),
+    showF&&h(Modal,{title:editing?"✏️ Modifier":"💼 Nouvel Investissement",onClose:()=>{setShowF(false);setEditing(null);},onSave:save_,saveColor:C.invest},
+      h(FG2,null,
+        h(FField,{label:"Titre *"},inp({style:S.inp,value:form.titre,onChange:e=>F("titre")(e.target.value)})),
+        h(FField,{label:"Catégorie"},sel({style:S.inp,value:form.categorie,onChange:e=>F("categorie")(e.target.value)},...["Initial","Extension","Renouvellement","Équipement","Infrastructure","Stock","Autre"].map(s=>h("option",{key:s},s)))),
+        h(FField,{label:"Montant (HTG) *"},inp({style:S.inp,type:"number",value:form.montant,onChange:e=>F("montant")(e.target.value)})),
+        h(FField,{label:"Date"},inp({style:S.inp,type:"date",value:form.date,onChange:e=>F("date")(e.target.value)})),
+        h(FField,{label:"Source des Fonds"},sel({style:S.inp,value:form.source,onChange:e=>F("source")(e.target.value)},...["Fonds propres","Emprunt bancaire","Prêt personnel","Partenaire","Subvention","Autre"].map(s=>h("option",{key:s},s)))),
+        h(FField,{label:"Rendement Attendu (%)"},inp({style:S.inp,type:"number",value:form.rendementAttendu||"",onChange:e=>F("rendementAttendu")(e.target.value)})),
+        h(FField,{label:"Statut"},sel({style:S.inp,value:form.statut,onChange:e=>F("statut")(e.target.value)},...["Actif","En attente","Amorti","Annulé"].map(s=>h("option",{key:s},s))))
+      ),
+      h(FField,{label:"Description"},inp({style:S.inp,value:form.description||"",onChange:e=>F("description")(e.target.value)})),
+      h(FField,{label:"Notes"},ta({style:{...S.inp,height:50,resize:"vertical",marginTop:8},value:form.notes||"",onChange:e=>F("notes")(e.target.value)}))
+    ),
+    delId&&h(ConfirmDel,{onConfirm:()=>del_(delId),onCancel:()=>setDelId(null),item:"cet investissement"}),
+    h(CrudTable,{headers:["Titre","Catégorie","Montant","Date","Source","Rendement","Statut","Actions"],empty:!investissements.length},
+      ...investissements.slice().reverse().map(i=>h("tr",{key:i.id},
+        h("td",{style:S.td},h("b",null,i.titre),i.description&&span({style:{fontSize:11,color:C.textL,display:"block"}},i.description)),
+        h("td",{style:S.td},span({style:{...S.badge,background:"#ede9fe",color:"#6d28d9"}},i.categorie)),
+        h("td",{style:{...S.td,fontWeight:700,color:C.invest}},fmt(i.montant)+" HTG"),
+        h("td",{style:S.td},i.date),h("td",{style:S.td},i.source),
+        h("td",{style:S.td},i.rendementAttendu?i.rendementAttendu+"%":"—"),
+        h("td",{style:S.td},h(SBadge,{s:i.statut||"Actif"})),
+        h("td",{style:S.td},h(RowActions,{onEdit:()=>{setForm(i);setEditing(i.id);setShowF(true);},onDel:session.role==="superadmin"?()=>setDelId(i.id):null}))
+      ))
+    )
+  );
+}
+
+// ── VENTES JOURNALIÈRES ──
+function VentesJournalieres({data}){
+  const[dateJ,setDateJ]=useState(tod());const[moisM,setMoisM]=useState(tod().slice(0,7));
+  const ventesJour=data.ventes.filter(v=>v.date===dateJ);
+  const totalJour=ventesJour.reduce((s,v)=>s+Number(v.total||0),0);
+  const profitJour=ventesJour.reduce((s,v)=>s+Number(v.profitNet||0),0);
+  const ventesMois=data.ventes.filter(v=>v.date?.startsWith(moisM));
+  const totalMois=ventesMois.reduce((s,v)=>s+Number(v.total||0),0);
+  const profitMois=ventesMois.reduce((s,v)=>s+Number(v.profitNet||0),0);
+  const parJour={};ventesMois.forEach(v=>{parJour[v.date]=(parJour[v.date]||{total:0,profit:0,nb:0});parJour[v.date].total+=Number(v.total||0);parJour[v.date].profit+=Number(v.profitNet||0);parJour[v.date].nb++;});
+  const mkCard=(l,v,c)=>div({style:{background:"#f8fafc",padding:"10px 12px",borderRadius:10,borderLeft:`3px solid ${c}`}},div({style:{fontSize:11,color:C.textM}},l),div({style:{fontSize:16,fontWeight:800,color:c}},v));
+  return div(null,
+    h("h2",{style:{fontSize:18,fontWeight:800,color:C.rapport,marginBottom:14}},"📅 Ventes Journalières & Mensuelles"),
+    div({style:{...S.card,borderLeft:`4px solid ${C.rapport}`,marginBottom:12}},
+      div({style:{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10,marginBottom:12}},
+        div({style:{fontWeight:700,color:C.rapport,fontSize:14}},"📆 Rapport Journalier"),
+        inp({style:{...S.inp,maxWidth:180},type:"date",value:dateJ,onChange:e=>setDateJ(e.target.value)})
+      ),
+      div({style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:10,marginBottom:12}},
+        mkCard("Nb Ventes",ventesJour.length,C.rapport),
+        mkCard("Chiffre d'Affaires",fmt(totalJour)+" HTG",C.commerce),
+        mkCard("Profit Net",fmt(profitJour)+" HTG","#10b981"),
+        mkCard("Panier Moyen",fmt(ventesJour.length>0?totalJour/ventesJour.length:0)+" HTG",C.primary)
+      ),
+      div({style:{overflowX:"auto"}},h("table",{style:S.table},
+        h("thead",null,h("tr",null,...["N°","Client","Articles","Total","Profit","Mode","Statut"].map(hd=>h("th",{key:hd,style:S.th},hd)))),
+        h("tbody",null,...ventesJour.map(v=>h("tr",{key:v.id},
+          h("td",{style:S.td},span({style:{...S.badge,background:"#ecfdf5",color:"#065f46"}},v.numero)),
+          h("td",{style:S.td},v.clientNom||"—"),h("td",{style:S.td},(v.items||[]).length),
+          h("td",{style:{...S.td,fontWeight:700,color:C.commerce}},fmt(v.total)+" HTG"),
+          h("td",{style:{...S.td,color:"#10b981"}},fmt(v.profitNet)+" HTG"),
+          h("td",{style:S.td},v.modePaiement),h("td",{style:S.td},h(SBadge,{s:v.statutPaiement||"Payé"}))
+        )),!ventesJour.length&&h(EmptyRow,{cols:7}))
+      ))
+    ),
+    div({style:{...S.card,borderLeft:`4px solid ${C.commerce}`}},
+      div({style:{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10,marginBottom:12}},
+        div({style:{fontWeight:700,color:C.commerce,fontSize:14}},"📊 Rapport Mensuel"),
+        inp({style:{...S.inp,maxWidth:180},type:"month",value:moisM,onChange:e=>setMoisM(e.target.value)})
+      ),
+      div({style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:10,marginBottom:12}},
+        mkCard("Nb Ventes",ventesMois.length,C.commerce),
+        mkCard("Chiffre d'Affaires",fmt(totalMois)+" HTG",C.commerce),
+        mkCard("Profit Net",fmt(profitMois)+" HTG","#10b981"),
+        mkCard("Jours actifs",Object.keys(parJour).length,C.primary)
+      ),
+      div({style:{overflowX:"auto"}},h("table",{style:S.table},
+        h("thead",null,h("tr",null,...["Date","Nb Ventes","CA du Jour","Profit du Jour"].map(hd=>h("th",{key:hd,style:S.th},hd)))),
+        h("tbody",null,...Object.entries(parJour).sort(([a],[b])=>b.localeCompare(a)).map(([date,info])=>h("tr",{key:date},
+          h("td",{style:S.td},h("b",null,date)),h("td",{style:S.td},info.nb),
+          h("td",{style:{...S.td,fontWeight:700,color:C.commerce}},fmt(info.total)+" HTG"),
+          h("td",{style:{...S.td,color:"#10b981"}},fmt(info.profit)+" HTG")
+        )),!Object.keys(parJour).length&&h(EmptyRow,{cols:4}))
+      ))
+    )
+  );
+}
+
+// ── RAPPORT D'ACTIVITÉS ──
+function RapportActivites({data}){
+  const[periode,setPeriode]=useState(tod().slice(0,7));
+  const ventesP=data.ventes.filter(v=>v.date?.startsWith(periode));
+  const achatsP=data.achats.filter(a=>a.date?.startsWith(periode));
+  const txP=data.transactions.filter(t=>t.date?.startsWith(periode));
+  const depP=data.depenses.filter(d=>d.date?.startsWith(periode));
+  const mvtsP=data.stockMovements.filter(m=>m.date?.startsWith(periode));
+  const tV=ventesP.reduce((s,v)=>s+Number(v.total||0),0);
+  const tA=achatsP.reduce((s,a)=>s+Number(a.totalGeneral||0),0);
+  const tT=txP.reduce((s,t)=>s+Number(t.montantPaye||0),0);
+  const tD=depP.reduce((s,d)=>s+Number(d.montant||0),0);
+  const pV=ventesP.reduce((s,v)=>s+Number(v.profitNet||0),0);
+  return div(null,
+    div({style:{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10,marginBottom:14}},
+      h("h2",{style:{fontSize:18,fontWeight:800,color:C.rapport,margin:0}},"📋 Rapport d'Activités"),
+      div({style:{display:"flex",gap:10,alignItems:"center"}},
+        inp({style:{...S.inp,maxWidth:180},type:"month",value:periode,onChange:e=>setPeriode(e.target.value)}),
+        btn({style:{...S.bp,fontSize:12},onClick:()=>window.print()},"🖨️ Imprimer")
+      )
+    ),
+    div({style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:11,marginBottom:14}},
+      ...[{l:"Entrées Ventes",v:`${fmt(tV)} HTG`,c:C.commerce},{l:"Entrées Taxi",v:`${fmt(tT)} HTG`,c:C.taxi},{l:"Sorties Achats",v:`${fmt(tA)} HTG`,c:C.danger},{l:"Sorties Dépenses",v:`${fmt(tD)} HTG`,c:C.danger},{l:"Profit Commerce",v:`${fmt(pV)} HTG`,c:"#10b981"},{l:"Total Entrées",v:`${fmt(tV+tT)} HTG`,c:C.primary}].map((c,i)=>div({key:i,style:{...S.card,borderLeft:`4px solid ${c.c}`}},div({style:{fontSize:11,color:C.textM}},c.l),div({style:{fontSize:16,fontWeight:800,color:c.c}},c.v)))
+    ),
+    div({style:{...S.card,marginBottom:12}},
+      div({style:{fontWeight:700,color:"#22c55e",marginBottom:9,fontSize:13}},`📥 ENTRÉES — Ventes (${ventesP.length})`),
+      div({style:{overflowX:"auto"}},h("table",{style:S.table},h("thead",null,h("tr",null,...["Date","N°","Client","Articles","Total","Profit","Mode"].map(hd=>h("th",{key:hd,style:S.th},hd)))),h("tbody",null,...ventesP.map(v=>h("tr",{key:v.id},h("td",{style:S.td},v.date),h("td",{style:S.td},span({style:{...S.badge,background:"#ecfdf5",color:"#065f46"}},v.numero)),h("td",{style:S.td},v.clientNom||"—"),h("td",{style:S.td},(v.items||[]).length),h("td",{style:{...S.td,fontWeight:700,color:C.commerce}},fmt(v.total)+" HTG"),h("td",{style:{...S.td,color:"#10b981"}},fmt(v.profitNet)+" HTG"),h("td",{style:S.td},v.modePaiement))),!ventesP.length&&h(EmptyRow,{cols:7}))))
+    ),
+    div({style:{...S.card,marginBottom:12}},
+      div({style:{fontWeight:700,color:C.taxi,marginBottom:9,fontSize:13}},`💳 ENTRÉES — Paiements Taxi (${txP.length})`),
+      div({style:{overflowX:"auto"}},h("table",{style:S.table},h("thead",null,h("tr",null,...["Date","Chauffeur","Montant","Balance","Mode"].map(hd=>h("th",{key:hd,style:S.th},hd)))),h("tbody",null,...txP.map(t=>{const ch=data.chauffeurs.find(c=>c.id===t.chauffeurId);return h("tr",{key:t.id},h("td",{style:S.td},t.date),h("td",{style:S.td},ch?.nom," ",ch?.prenom),h("td",{style:{...S.td,fontWeight:700,color:C.taxi}},fmt(t.montantPaye)+" HTG"),h("td",{style:{...S.td,color:Number(t.balance)>0?C.danger:"#22c55e"}},fmt(t.balance)+" HTG"),h("td",{style:S.td},t.modePaiement));}),!txP.length&&h(EmptyRow,{cols:5}))))
+    ),
+    div({style:{...S.card,marginBottom:12}},
+      div({style:{fontWeight:700,color:C.danger,marginBottom:9,fontSize:13}},`📤 SORTIES — Achats (${achatsP.length})`),
+      div({style:{overflowX:"auto"}},h("table",{style:S.table},h("thead",null,h("tr",null,...["Date","N°","Fournisseur","Articles","Total","Livraison"].map(hd=>h("th",{key:hd,style:S.th},hd)))),h("tbody",null,...achatsP.map(a=>h("tr",{key:a.id},h("td",{style:S.td},a.date),h("td",{style:S.td},span({style:{...S.badge,background:"#fef3c7",color:"#92400e"}},a.numero)),h("td",{style:S.td},a.fournisseurNom||"—"),h("td",{style:S.td},(a.items||[]).length),h("td",{style:{...S.td,fontWeight:700,color:C.danger}},fmt(a.totalGeneral)+" HTG"),h("td",{style:S.td},h(SBadge,{s:a.statutLivraison})))),!achatsP.length&&h(EmptyRow,{cols:6}))))
+    ),
+    div({style:{...S.card,marginBottom:12}},
+      div({style:{fontWeight:700,color:C.taxi,marginBottom:9,fontSize:13}},`💸 SORTIES — Dépenses (${depP.length})`),
+      div({style:{overflowX:"auto"}},h("table",{style:S.table},h("thead",null,h("tr",null,...["Date","Catégorie","Description","Montant"].map(hd=>h("th",{key:hd,style:S.th},hd)))),h("tbody",null,...depP.map(d=>h("tr",{key:d.id},h("td",{style:S.td},d.date),h("td",{style:S.td},span({style:{...S.badge,background:"#fef3c7",color:"#92400e"}},d.categorie)),h("td",{style:S.td},d.description),h("td",{style:{...S.td,fontWeight:700,color:C.danger}},fmt(d.montant)+" HTG"))),!depP.length&&h(EmptyRow,{cols:4}))))
+    ),
+    div({style:S.card},
+      div({style:{fontWeight:700,color:C.invest,marginBottom:9,fontSize:13}},`🔄 MOUVEMENTS STOCK (${mvtsP.length})`),
+      div({style:{overflowX:"auto"}},h("table",{style:S.table},h("thead",null,h("tr",null,...["Date","Produit","Type","Quantité","Référence"].map(hd=>h("th",{key:hd,style:S.th},hd)))),h("tbody",null,...mvtsP.map(m=>h("tr",{key:m.id},h("td",{style:S.td},m.date),h("td",{style:S.td},m.produitNom),h("td",{style:S.td},span({style:{...S.badge,background:m.quantite>0?"#dcfce7":"#fef2f2",color:m.quantite>0?"#166534":C.danger}},m.type)),h("td",{style:{...S.td,fontWeight:700,color:m.quantite>0?"#22c55e":C.danger}},(m.quantite>0?"+":"")+m.quantite),h("td",{style:S.td},m.ref||"—"))),!mvtsP.length&&h(EmptyRow,{cols:5}))))
+    )
+  );
+}
+
+// ── CAISSE ──
+function Caisse({data}){
+  const tET=data.transactions.reduce((s,t)=>s+Number(t.montantPaye||0),0);
+  const tDT=data.depenses.reduce((s,d)=>s+Number(d.montant||0),0);
+  const tPT=data.pertes.reduce((s,p)=>s+Number(p.coutEstime||0),0);
+  const tVc=data.ventes.reduce((s,v)=>s+Number(v.total||0),0);
+  const pCm=data.ventes.reduce((s,v)=>s+Number(v.profitNet||0),0);
+  const tAc=data.achats.reduce((s,a)=>s+Number(a.totalGeneral||0),0);
+  const tIv=(data.investissements||[]).reduce((s,i)=>s+Number(i.montant||0),0);
+  const bTx=tET-tDT-tPT;const bTot=bTx+pCm;
+  const parMT={};data.transactions.forEach(t=>{const m=t.date?.slice(0,7);if(m)parMT[m]=(parMT[m]||0)+Number(t.montantPaye||0);});
+  const parMV={};data.ventes.forEach(v=>{const m=v.date?.slice(0,7);if(m)parMV[m]=(parMV[m]||0)+Number(v.total||0);});
+  const mois=[...new Set([...Object.keys(parMT),...Object.keys(parMV)])].sort().slice(-6);
+  return div(null,
+    h("h2",{style:{fontSize:18,fontWeight:800,color:C.text,marginBottom:12}},"🏦 Caisse & Flux Financier"),
+    div({style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(165px,1fr))",gap:11,marginBottom:14}},
+      ...[{l:"Encaissé Taxi",v:tET,c:C.taxi},{l:"Dépenses Taxi",v:tDT,c:C.danger},{l:"Pertes Taxi",v:tPT,c:C.danger},{l:"Bénéfice Taxi",v:bTx,c:bTx>=0?"#22c55e":C.danger},{l:"CA Commerce",v:tVc,c:C.commerce},{l:"Achats Commerce",v:tAc,c:C.danger},{l:"Profit Commerce",v:pCm,c:pCm>=0?"#10b981":C.danger},{l:"Investissements",v:tIv,c:C.invest},{l:"BÉNÉFICE NET TOTAL",v:bTot,c:bTot>=0?"#10b981":C.danger}].map((c,i)=>div({key:i,style:{...S.card,borderLeft:`4px solid ${c.c}`}},div({style:{fontSize:11,color:C.textM}},c.l),div({style:{fontSize:17,fontWeight:800,color:c.c}},fmt(c.v)+" HTG")))
+    ),
+    mois.length>0&&div({style:{...S.card,overflowX:"auto"}},
+      div({style:{fontWeight:700,marginBottom:9}},"📊 Flux Mensuel"),
+      h("table",{style:S.table},
+        h("thead",null,h("tr",null,...["Mois","Taxi","Commerce","Total Entrées"].map(hd=>h("th",{key:hd,style:S.th},hd)))),
+        h("tbody",null,...mois.map(m=>{const t=parMT[m]||0,v=parMV[m]||0;return h("tr",{key:m},h("td",{style:S.td},h("b",null,m)),h("td",{style:{...S.td,color:C.taxi,fontWeight:700}},fmt(t)+" HTG"),h("td",{style:{...S.td,color:C.commerce,fontWeight:700}},fmt(v)+" HTG"),h("td",{style:{...S.td,fontWeight:700}},fmt(t+v)+" HTG"));}))
+      )
+    )
+  );
+}
+
+// ── RAPPORTS ──
+function Rapports({data}){
+  const tET=data.transactions.reduce((s,t)=>s+Number(t.montantPaye||0),0);
+  const tDT=data.depenses.reduce((s,d)=>s+Number(d.montant||0),0);
+  const tPT=data.pertes.reduce((s,p)=>s+Number(p.coutEstime||0),0);
+  const tVc=data.ventes.reduce((s,v)=>s+Number(v.total||0),0);
+  const pCm=data.ventes.reduce((s,v)=>s+Number(v.profitNet||0),0);
+  const tIv=(data.investissements||[]).reduce((s,i)=>s+Number(i.montant||0),0);
+  const dCat={};data.depenses.forEach(d=>{dCat[d.categorie]=(dCat[d.categorie]||0)+Number(d.montant||0);});
+  const vCli={};data.ventes.forEach(v=>{const n=v.clientNom||"Anonyme";vCli[n]=(vCli[n]||0)+Number(v.total||0);});
+  return div(null,
+    div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}},
+      h("h2",{style:{fontSize:18,fontWeight:800,color:C.text,margin:0}},"📈 Rapports Généraux"),
+      btn({style:S.bp,onClick:()=>window.print()},"🖨️ Imprimer")
+    ),
+    div({style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:11,marginBottom:14}},
+      ...[{l:"Motos",v:data.motos.length,c:C.taxi},{l:"Chauffeurs",v:data.chauffeurs.length,c:C.taxi},{l:"Contrats Actifs",v:data.contrats.filter(c=>c.statut==="actif").length,c:C.taxi},{l:"Produits",v:data.produits.length,c:C.commerce},{l:"Clients",v:data.clients.length,c:C.commerce},{l:"Ventes",v:data.ventes.length,c:C.commerce},{l:"Investissements",v:(data.investissements||[]).length,c:C.invest}].map((c,i)=>div({key:i,style:S.card},div({style:{fontSize:11,color:C.textM}},c.l),div({style:{fontSize:20,fontWeight:800,color:c.c}},c.v)))
+    ),
+    div({style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}},
+      div({style:S.card},div({style:{fontWeight:700,marginBottom:9}},"🏍️ Résumé Taxi"),...[["Encaissé",tET,C.taxi],["Dépenses",tDT,C.danger],["Pertes",tPT,C.danger],["Bénéfice",tET-tDT-tPT,tET-tDT-tPT>=0?"#22c55e":C.danger]].map(([l,v,c])=>div({key:l,style:{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #f1f5f9"}},span({style:{fontSize:13,color:C.textM}},l),span({style:{fontWeight:700,color:c}},fmt(v)+" HTG")))),
+      div({style:S.card},div({style:{fontWeight:700,marginBottom:9}},"🛒 Résumé Commerce"),...[["CA Total",tVc,C.commerce],["Profit Net",pCm,"#10b981"],["Investissements",tIv,C.invest]].map(([l,v,c])=>div({key:l,style:{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #f1f5f9"}},span({style:{fontSize:13,color:C.textM}},l),span({style:{fontWeight:700,color:c}},fmt(v)+" HTG")))),
+      div({style:S.card},div({style:{fontWeight:700,marginBottom:9}},"💸 Dépenses par Catégorie"),...Object.entries(dCat).map(([cat,v])=>div({key:cat,style:{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #f1f5f9"}},span({style:{fontSize:13,color:C.textM}},cat),span({style:{fontWeight:700,color:C.danger}},fmt(v)+" HTG"))),!Object.keys(dCat).length&&span({style:{color:C.textL,fontSize:13}},"Aucune")),
+      div({style:S.card},div({style:{fontWeight:700,marginBottom:9}},"👥 Top Clients"),...Object.entries(vCli).sort(([,a],[,b])=>b-a).slice(0,5).map(([nom,v])=>div({key:nom,style:{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #f1f5f9"}},span({style:{fontSize:13,color:C.textM}},nom),span({style:{fontWeight:700,color:C.commerce}},fmt(v)+" HTG"))),!Object.keys(vCli).length&&span({style:{color:C.textL,fontSize:13}},"Aucune vente"))
+    )
+  );
+}
+
+// ── UTILISATEURS ──
+function GUsers({data,mutate,showAlert}){
+  const[showF,setShowF]=useState(false);const em=()=>({nom:"",username:"",password:"",role:"agent",actif:true});const[form,setForm]=useState(em());const F=(k)=>v=>setForm(f=>({...f,[k]:v}));
+  return div(null,
+    h(PageHeader,{title:"🔐 Utilisateurs",color:C.primary,onAdd:()=>{setForm(em());setShowF(true);},label:"+ Utilisateur"}),
+    showF&&h(Modal,{title:"➕ Nouvel Utilisateur",onClose:()=>setShowF(false),onSave:()=>{if(!form.nom||!form.username||!form.password){showAlert("Tous les champs requis","error");return;}mutate(d=>{d.users=[...d.users,{...form,id:gid("u")}];return d;});showAlert("Ajouté ✓","success");setShowF(false);}},
+      h(FG2,null,
+        h(FField,{label:"Nom"},inp({style:S.inp,value:form.nom,onChange:e=>F("nom")(e.target.value)})),
+        h(FField,{label:"Username"},inp({style:S.inp,value:form.username,onChange:e=>F("username")(e.target.value)})),
+        h(FField,{label:"Mot de passe"},inp({style:S.inp,type:"password",value:form.password,onChange:e=>F("password")(e.target.value)})),
+        h(FField,{label:"Rôle"},sel({style:S.inp,value:form.role,onChange:e=>F("role")(e.target.value)},h("option",{value:"agent"},"Agent"),h("option",{value:"superadmin"},"Super Admin")))
+      )
+    ),
+    div({style:S.card},...data.users.map(u=>div({key:u.id,style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",borderRadius:10,background:"#f8fafc",marginBottom:7}},
+      div(null,div({style:{fontWeight:700,fontSize:13}},u.nom),div({style:{fontSize:11,color:C.textM}},"@",u.username," · ",span({style:{color:u.role==="superadmin"?C.taxi:C.primary}},u.role==="superadmin"?"Super Admin":"Agent")," · ",span({style:{color:u.actif?"#22c55e":C.danger}},u.actif?"Actif":"Inactif"))),
+      btn({style:{...S.bie,background:u.actif?"#fef2f2":"#f0fdf4"},onClick:()=>mutate(d=>{d.users=d.users.map(x=>x.id===u.id?{...x,actif:!x.actif}:x);return d;})},u.actif?"🔒":"🔓")
+    )))
+  );
+}
+
+// ── EXTENSIONS ──
+function GExtensions({data,mutate,showAlert}){
+  const[showF,setShowF]=useState(false);const[delId,setDelId]=useState(null);const em=()=>({nom:"",icon:"🧩",description:"",champs:[]});const[form,setForm]=useState(em());const F=(k)=>v=>setForm(f=>({...f,[k]:v}));const[champF,setChampF]=useState({label:"",type:"text"});
+  return div(null,
+    h(PageHeader,{title:"🧩 Extensions",color:C.primary,onAdd:()=>{setForm(em());setShowF(true);},label:"+ Nouveau Module"}),
+    h(InfoBox,{c:"#eef2ff"},"Créez vos propres modules personnalisés sans modifier le code source."),
+    div({style:{height:10}}),
+    showF&&h(Modal,{title:"🧩 Nouveau Module",onClose:()=>setShowF(false),onSave:()=>{if(!form.nom){showAlert("Nom requis","error");return;}mutate(d=>{d.modules=[...d.modules,{...form,id:gid("mod"),dateCreation:tod(),enregistrements:[]}];return d;});showAlert("Module créé ✓","success");setShowF(false);}},
+      h(FG2,null,
+        h(FField,{label:"Nom *"},inp({style:S.inp,value:form.nom,onChange:e=>F("nom")(e.target.value)})),
+        h(FField,{label:"Icône (emoji)"},inp({style:S.inp,value:form.icon,onChange:e=>F("icon")(e.target.value)}))
+      ),
+      h(FField,{label:"Description"},inp({style:S.inp,value:form.description||"",onChange:e=>F("description")(e.target.value)})),
+      div({style:{height:10}}),
+      h(SectionLabel,{c:C.primary},"📋 Champs"),
+      div({style:{background:"#f8fafc",borderRadius:10,padding:12,marginBottom:10}},
+        h(FG2,null,
+          h(FField,{label:"Nom du Champ"},inp({style:S.inp,value:champF.label,onChange:e=>setChampF(f=>({...f,label:e.target.value}))})),
+          h(FField,{label:"Type"},sel({style:S.inp,value:champF.type,onChange:e=>setChampF(f=>({...f,type:e.target.value}))},h("option",{value:"text"},"Texte"),h("option",{value:"number"},"Nombre"),h("option",{value:"date"},"Date")))
+        ),
+        btn({style:{...S.bp,fontSize:12},onClick:()=>{if(!champF.label)return;setForm(f=>({...f,champs:[...f.champs,{id:gid("cf"),label:champF.label,type:champF.type}]}));setChampF({label:"",type:"text"});}},"+ Ajouter Champ")
+      ),
+      ...form.champs.map((c,i)=>div({key:c.id,style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 10px",background:"#f0f9ff",borderRadius:8,marginBottom:6}},
+        span({style:{fontSize:13}},h("b",null,c.label)," ",span({style:{color:C.textL}},"(",c.type,")")),
+        btn({style:{...S.bid,padding:"3px 8px",fontSize:12},onClick:()=>setForm(f=>({...f,champs:f.champs.filter((_,j)=>j!==i)}))},"\u2715")
+      ))
+    ),
+    delId&&h(ConfirmDel,{onConfirm:()=>{mutate(d=>{d.modules=d.modules.filter(m=>m.id!==delId);return d;});showAlert("Module supprimé","warning");setDelId(null);},onCancel:()=>setDelId(null),item:"ce module personnalisé"}),
+    div({style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))",gap:12}},
+      ...(data.modules||[]).map(m=>div({key:m.id,style:{...S.card,borderTop:`4px solid ${C.primary}`}},
+        div({style:{fontSize:26,marginBottom:5}},m.icon),
+        div({style:{fontWeight:800,fontSize:14}},m.nom),
+        div({style:{fontSize:12,color:C.textM,marginBottom:7}},m.description),
+        div({style:{fontSize:11,color:C.textL,marginBottom:10}},(m.champs||[]).length+" champs · "+(m.enregistrements||[]).length+" enregistrements"),
+        btn({style:{...S.bid,fontSize:12},onClick:()=>setDelId(m.id)},"🗑️ Supprimer")
+      )),
+      !(data.modules||[]).length&&div({style:{...S.card,textAlign:"center",color:C.textL,gridColumn:"1/-1",padding:40}},"🧩 Aucun module créé.")
+    )
+  );
+}
+
+function ExtView({module:m}){return div(null,h("h2",{style:{fontSize:18,fontWeight:800,margin:"0 0 12px"}},m.icon," ",m.nom),h(InfoBox,{c:"#eef2ff"},"Module personnalisé — ",(m.champs||[]).length," champs · Gérez via ⚙️ Extensions"));}
+
+// ── PARAMÈTRES ──
+function Parametres({session,data,mutate,showAlert,onClose,setSession}){
+  const[tab,setTab]=useState("profil");
+  const[nom,setNom]=useState(session.nom);const[username,setUsername]=useState(session.username);
+  const[oldPwd,setOldPwd]=useState("");const[newPwd,setNewPwd]=useState("");const[confPwd,setConfPwd]=useState("");
+  const[editUser,setEditUser]=useState(null);const[euNom,setEuNom]=useState("");const[euUser,setEuUser]=useState("");const[euPwd,setEuPwd]=useState("");const[euRole,setEuRole]=useState("agent");
+  const tbStyle=(t)=>({padding:"9px 14px",border:"none",cursor:"pointer",fontWeight:700,fontSize:13,borderBottom:tab===t?`2px solid ${C.primary}`:"2px solid transparent",color:tab===t?C.primary:C.textM,background:"transparent"});
+  return div({style:S.modal},div({style:{...S.mbox,maxWidth:480}},
+    div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}},
+      h("h3",{style:{...S.mtitle,margin:0}},"⚙️ Paramètres"),
+      btn({style:{background:"transparent",border:"none",fontSize:20,cursor:"pointer",color:C.textM},onClick:onClose},"\u2715")
+    ),
+    div({style:{display:"flex",borderBottom:`1px solid ${C.border}`,marginBottom:16}},
+      btn({style:tbStyle("profil"),onClick:()=>setTab("profil")},"👤 Profil"),
+      btn({style:tbStyle("pwd"),onClick:()=>setTab("pwd")},"🔑 Mot de passe"),
+      session.role==="superadmin"&&btn({style:tbStyle("users"),onClick:()=>setTab("users")},"👥 Utilisateurs")
+    ),
+    tab==="profil"&&div(null,
+      div({style:{marginBottom:11}},h("label",{style:S.lbl},"Nom complet"),inp({style:S.inp,value:nom,onChange:e=>setNom(e.target.value)})),
+      div({style:{marginBottom:11}},h("label",{style:S.lbl},"Nom d'utilisateur"),inp({style:S.inp,value:username,onChange:e=>setUsername(e.target.value)})),
+      h(InfoBox,{c:"#f8fafc"},"Rôle : ",h("b",{style:{color:C.primary}},session.role==="superadmin"?"Super Admin":"Agent")),
+      div({style:{height:10}}),
+      btn({style:S.bp,onClick:()=>{if(!nom||!username){showAlert("Requis","error");return;}mutate(d=>{d.users=d.users.map(u=>u.id===session.id?{...u,nom,username}:u);return d;});setSession(s=>({...s,nom,username}));showAlert("Profil mis à jour ✓","success");}},"💾 Enregistrer")
+    ),
+    tab==="pwd"&&div(null,
+      div({style:{marginBottom:11}},h("label",{style:S.lbl},"Ancien mot de passe"),inp({style:S.inp,type:"password",value:oldPwd,onChange:e=>setOldPwd(e.target.value)})),
+      div({style:{marginBottom:11}},h("label",{style:S.lbl},"Nouveau mot de passe"),inp({style:S.inp,type:"password",value:newPwd,onChange:e=>setNewPwd(e.target.value)})),
+      div({style:{marginBottom:11}},h("label",{style:S.lbl},"Confirmer"),inp({style:S.inp,type:"password",value:confPwd,onChange:e=>setConfPwd(e.target.value)})),
+      newPwd&&confPwd&&newPwd!==confPwd&&span({style:{color:C.danger,fontSize:12,display:"block",marginBottom:8}},"⚠ Ne correspondent pas"),
+      btn({style:S.bp,onClick:()=>{const usr=data.users.find(u=>u.id===session.id);if(usr.password!==oldPwd){showAlert("Mot de passe incorrect","error");return;}if(newPwd.length<6){showAlert("Min 6 caractères","error");return;}if(newPwd!==confPwd){showAlert("Ne correspondent pas","error");return;}mutate(d=>{d.users=d.users.map(u=>u.id===session.id?{...u,password:newPwd}:u);return d;});setOldPwd("");setNewPwd("");setConfPwd("");showAlert("Mot de passe modifié ✓","success");}},"🔑 Changer")
+    ),
+    tab==="users"&&session.role==="superadmin"&&div(null,
+      editUser?div(null,
+        div({style:{fontWeight:700,color:C.primary,marginBottom:10,fontSize:13}},"✏️ ",editUser.nom),
+        h(FG2,null,
+          h(FField,{label:"Nom"},inp({style:S.inp,value:euNom,onChange:e=>setEuNom(e.target.value)})),
+          h(FField,{label:"Username"},inp({style:S.inp,value:euUser,onChange:e=>setEuUser(e.target.value)})),
+          h(FField,{label:"Nouveau mot de passe (optionnel)"},inp({style:S.inp,type:"password",value:euPwd,onChange:e=>setEuPwd(e.target.value)})),
+          h(FField,{label:"Rôle"},sel({style:S.inp,value:euRole,onChange:e=>setEuRole(e.target.value)},h("option",{value:"agent"},"Agent"),h("option",{value:"superadmin"},"Super Admin")))
+        ),
+        div({style:{display:"flex",gap:10}},btn({style:S.bs,onClick:()=>setEditUser(null)},"Annuler"),btn({style:S.bp,onClick:()=>{mutate(d=>{d.users=d.users.map(u=>u.id===editUser.id?{...u,nom:euNom,username:euUser,role:euRole,...(euPwd?{password:euPwd}:{})}:u);return d;});showAlert("Modifié ✓","success");setEditUser(null);}},"💾 Enregistrer"))
+      ):div(null,...data.users.map(u=>div({key:u.id,style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 11px",borderRadius:9,background:"#f8fafc",marginBottom:7}},
+        div(null,div({style:{fontWeight:700,fontSize:13}},u.nom),div({style:{fontSize:11,color:C.textM}},"@",u.username," · ",u.role==="superadmin"?"Super Admin":"Agent"," · ",span({style:{color:u.actif?"#22c55e":C.danger}},u.actif?"Actif":"Inactif"))),
+        div({style:{display:"flex",gap:5}},
+          btn({style:S.bie,onClick:()=>{setEditUser(u);setEuNom(u.nom);setEuUser(u.username);setEuPwd("");setEuRole(u.role);}},"✏️"),
+          btn({style:{...S.bie,background:u.actif?"#fef2f2":"#f0fdf4"},onClick:()=>mutate(d=>{d.users=d.users.map(x=>x.id===u.id?{...x,actif:!x.actif}:x);return d;})},u.actif?"🔒":"🔓")
+        )
+      )))
+    ),
+    div({style:S.mact},btn({style:S.bs,onClick:onClose},"Fermer"))
+  ));
+}
+
+// ── RENDER ──
+ReactDOM.render(React.createElement(App), document.getElementById("root"));
+</script>
+</body>
+</html>
