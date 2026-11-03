@@ -34,7 +34,7 @@ users:[{id:"u1",nom:"Rose Thamar",username:"rosethamar",password:"RTB@2024!",rol
 const loadLocal=()=>{try{const r=localStorage.getItem(SK);return r?{...DEF,...JSON.parse(r)}:{...DEF}}catch{return{...DEF}}};
 const saveLocal=(d)=>{try{localStorage.setItem(SK,JSON.stringify({...d,lastSync:new Date().toISOString()}));return true}catch{return false}};
 const saveFirebase=async(d)=>{if(!db)return false;try{await db.ref("rtbm_data").set(JSON.parse(JSON.stringify({...d,lastSync:new Date().toISOString()})));return true}catch(e){return false}};
-const listenFirebase=(cb)=>{if(!db)return()=>{};const ref=db.ref("rtbm_data");ref.on("value",s=>{const v=s.val();if(v){saveLocal(v);cb(v);}});return()=>ref.off("value");};
+const listenFirebase=(cb)=>{if(!db)return()=>{};const ref=db.ref("rtbm_data");ref.on("value",s=>{const v=s.val();if(v){const merged={...DEF,...v};saveLocal(merged);cb(merged);}});return()=>ref.off("value");};
 
 const gid=(p="x")=>`${p}_${Date.now()}_${Math.random().toString(36).slice(2,6)}`;
 const fmt=(n)=>Number(n||0).toLocaleString("fr");
@@ -294,6 +294,7 @@ function App(){
     alert&&div({style:{background:alertColors[alert.type],color:"#fff",padding:"8px 16px",fontSize:13,fontWeight:600,flexShrink:0}},alert.msg),
     // CONTENT
     div({style:{flex:1,overflowY:"auto",padding:"14px"}},
+      h(ErrorBoundary,{key:page,onBack:()=>navTo("dashboard")},
       page==="dashboard"      ? h(Dashboard,{data,setPage:navTo,session}) :
       page==="motos"          ? h(GMotos,{data,mutate,showAlert,session}) :
       page==="chauffeurs"     ? h(GChauffeurs,{data,mutate,showAlert,session}) :
@@ -316,6 +317,7 @@ function App(){
       page==="utilisateurs"&&session.role==="superadmin" ? h(GUsers,{data,mutate,showAlert}) :
       page==="extensions"&&session.role==="superadmin"   ? h(GExtensions,{data,mutate,showAlert}) :
       (data.modules||[]).map(m=>page==="ext_"+m.id?h(ExtView,{key:m.id,module:m}):null)
+      )
     ),
     showParams&&h(Parametres,{session,data,mutate,showAlert,onClose:()=>setShowParams(false),setSession})
   );
@@ -423,7 +425,27 @@ function Dashboard({data,setPage}){
 }
 
 // ── GENERIC CRUD TABLE ──
-function CrudTable({headers,rows,empty}){
+// ── ERROR BOUNDARY (évite la page blanche si un module plante) ──
+class ErrorBoundary extends React.Component{
+  constructor(props){super(props);this.state={err:null};}
+  static getDerivedStateFromError(e){return{err:e};}
+  componentDidCatch(e,info){console.error("Module error:",e,info);}
+  render(){
+    if(!this.state.err)return this.props.children;
+    return h("div",{style:{...S.card,borderLeft:"4px solid "+C.danger,maxWidth:560,margin:"20px auto"}},
+      h("div",{style:{fontSize:18,fontWeight:800,color:C.danger,marginBottom:8}},"⚠️ Ce module a rencontré une erreur"),
+      h("div",{style:{fontSize:13,color:C.textM,marginBottom:10}},"Vos données ne sont pas perdues. Vous pouvez retourner au tableau de bord et continuer."),
+      h("div",{style:{fontSize:11,background:"#fef2f2",color:C.danger,padding:"8px 10px",borderRadius:8,marginBottom:12,wordBreak:"break-word"}},String(this.state.err&&this.state.err.message||this.state.err)),
+      h("div",{style:{display:"flex",gap:10,flexWrap:"wrap"}},
+        h("button",{style:S.bp,onClick:()=>{this.setState({err:null});this.props.onBack&&this.props.onBack();}},"🏠 Tableau de bord"),
+        h("button",{style:S.bs,onClick:()=>location.reload()},"🔄 Recharger")
+      )
+    );
+  }
+}
+
+function CrudTable({headers,empty,children}){
+  const rows=children?Array.isArray(children)?children:[children]:[];
   return div({style:{...S.card,overflowX:"auto"}},
     h("table",{style:S.table},
       h("thead",null,h("tr",null,...headers.map(hd=>h("th",{key:hd,style:S.th},hd)))),
