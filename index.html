@@ -34,7 +34,7 @@ users:[{id:"u1",nom:"Rose Thamar",username:"rosethamar",password:"RTB@2024!",rol
 const loadLocal=()=>{try{const r=localStorage.getItem(SK);return r?{...DEF,...JSON.parse(r)}:{...DEF}}catch{return{...DEF}}};
 const saveLocal=(d)=>{try{localStorage.setItem(SK,JSON.stringify({...d,lastSync:new Date().toISOString()}));return true}catch{return false}};
 const saveFirebase=async(d)=>{if(!db)return false;try{await db.ref("rtbm_data").set(JSON.parse(JSON.stringify({...d,lastSync:new Date().toISOString()})));return true}catch(e){return false}};
-const listenFirebase=(cb)=>{if(!db)return()=>{};const ref=db.ref("rtbm_data");ref.on("value",s=>{const v=s.val();if(v){const merged={...DEF,...v};saveLocal(merged);cb(merged);}});return()=>ref.off("value");};
+const listenFirebase=(cb,onErr)=>{if(!db)return()=>{};const ref=db.ref("rtbm_data");ref.on("value",s=>{const v=s.val();if(v){const merged={...DEF,...v};saveLocal(merged);cb(merged);}else{cb(null);}},e=>{if(onErr)onErr(e);});return()=>ref.off("value");};
 
 const gid=(p="x")=>`${p}_${Date.now()}_${Math.random().toString(36).slice(2,6)}`;
 const fmt=(n)=>Number(n||0).toLocaleString("fr");
@@ -207,7 +207,7 @@ function App(){
   const[session,setSession]=useState(null);
   const[page,setPage]=useState("dashboard");
   const[saveStatus,setSaveStatus]=useState("✓ Local");
-  const[syncStatus,setSyncStatus]=useState(FB_OK?"🔄 Connexion...":"⚠️ Mode Local");
+  const[syncStatus,setSyncStatus]=useState(FB_OK&&db?"🔄 Connexion...":"⚠️ Mode Local (Firebase indisponible)");
   const[alert,setAlert]=useState(null);
   const[menuOpen,setMenuOpen]=useState(false);
   const[showParams,setShowParams]=useState(false);
@@ -216,8 +216,8 @@ function App(){
   const isRemote=useRef(false);
 
   useEffect(()=>{
-    if(!FB_OK){setSyncStatus("⚠️ Mode Local");return;}
-    const unsub=listenFirebase(d=>{setFbReady(true);setSyncStatus("🟢 "+new Date().toLocaleTimeString("fr"));isRemote.current=true;setData(d);});
+    if(!FB_OK||!db){setSyncStatus("⚠️ Mode Local (Firebase indisponible)");return;}
+    const unsub=listenFirebase(d=>{setFbReady(true);setSyncStatus("🟢 Synchronisé "+new Date().toLocaleTimeString("fr"));if(d){isRemote.current=true;setData(d);}},e=>{setSyncStatus("🔴 Firebase : "+((e&&(e.code||e.message))||"erreur"));});
     return unsub;
   },[]);
 
